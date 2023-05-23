@@ -6,6 +6,8 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QStandardItem, QStandardItemModel
 from PyQt5.QtWidgets import QApplication, QMainWindow, QAction, QMenu, QFileDialog, QSplitter, QTreeView, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QFrame
 
+from overviewdata import read_excel
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -15,9 +17,11 @@ class MainWindow(QMainWindow):
         self.initMenuBar()
         self.initMainWindows()
         self.showMaximized()
-
+        dataOver = read_excel("D:\\projects\\python\\DPT\\2021年10月\\1018\\试验说明\\32.9.16-20211018-中通道.xlsx")
         self.root_folder_path = ""
         self.search_input.textChanged.connect(self.filterTreeView)
+
+
 
 
     def initMenuBar(self):
