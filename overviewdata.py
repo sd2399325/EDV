@@ -9,7 +9,8 @@ def read_excel(file_path):
     workbook = load_workbook(file_path)
     sheet_names = workbook.sheetnames
 
-    result = []
+    result = {}  # 将 result 设置字典类型
+
     for sheet_name in sheet_names:
         sheet = workbook[sheet_name]
         rows = sheet.max_row
@@ -33,6 +34,6 @@ def read_excel(file_path):
 
             sheet_data.append(row_data)
 
-        result[sheet_name] = sheet_data
+        result[sheet_name] = sheet_data  # 使用 sheet_name 作为键
 
     return result
