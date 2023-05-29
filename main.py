@@ -1,6 +1,7 @@
 import os
 import re
 import sys
+import dateparser
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QStandardItem, QStandardItemModel
@@ -13,13 +14,15 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("测试")
-        self.initMenuBar()
-        self.initMainWindows()
-        self.showMaximized()
-        dataOver = read_excel("D:\\projects\\python\\DPT\\2021年10月\\1018\\试验说明\\32.9.16-20211018-中通道.xlsx")
-        self.root_folder_path = ""
-        self.search_input.textChanged.connect(self.filterTreeView)
+        # self.setWindowTitle("测试")
+        # self.initMenuBar()
+        # self.initMainWindows()
+        # self.showMaximized()
+        # dataOver = read_excel("D:\\projects\\python\\DPT\\2021年10月\\1018\\试验说明\\32.9.16-20211018-中通道.xlsx")
+        # self.root_folder_path = ""
+        # self.search_input.textChanged.connect(self.filterTreeView)
+        self.loadProjects("D:\\projects\\python\\DPT")
+
 
 
 
@@ -113,6 +116,24 @@ class MainWindow(QMainWindow):
         self.tree_view.header().setVisible(False)
         self.tree_view.expandAll()
 
+    def loadTreeView1(self, folder_path):
+        pass
+
+    def loadSubDirectories1(self, parent_item, projects_info):
+        """
+        递归加载子目录
+        """
+        if not projects_info:
+            return None
+        else:
+           for first_key in projects_info.keys():
+               item = QStandardItem(first_key)
+               item.setData(first_key, Qt.UserRole)
+               parent_item.appendRow(item)
+               self.
+
+
+
     def loadSubDirectories(self, parent_item, folder_path, depth=2):
         """
         递归加载子目录
@@ -173,6 +194,61 @@ class MainWindow(QMainWindow):
             return True
 
         return False
+
+
+    def loadProjects(self, folder_path):
+        result = {}
+        pattern = r'\d+\.\d+\.\d+'
+
+        if not os.path.exists(folder_path) or not os.path.isdir(folder_path):
+            return result
+
+        for root, dirs, files in os.walk(folder_path):
+            for dir_name in dirs:
+                if re.match(pattern, dir_name):
+                    # 10.1.1 => 10 and 1.1
+                    parts = dir_name.split(".", 1)
+                    first_dir = parts[0]
+                    secrond_dir = parts[1]
+                    secrond_result = {}
+
+                    if first_dir in result:
+                        path1 = result[dir_name][first_dir]
+                        path2 = os.path.join(root, dir_name)
+
+                        new_path = self.compareDirs(path1, path2)
+                        result[dir_name][first_dir] = new_path if new_path is not None else path1
+                    else:
+                        dir_path = os.path.join(root, dir_name)
+                        secrond_result[secrond_dir] = dir_path
+                        result[first_dir] = secrond_result
+
+        return result
+
+    def compareDirs(self, path1, path2):
+        dir1_parent = os.path.dirname(os.path.dirname(os.path.dirname(path1)))
+        dir2_parent = os.path.dirname(os.path.dirname(os.path.dirname(path2)))
+        dir1_year_month = os.path.basename(dir1_parent)
+        dir2_year_month = os.path.basename(dir2_parent)
+
+        year_month1 = self.parse_year_month(dir1_year_month)
+        year_month2 = self.parse_year_month(dir2_year_month)
+
+        dir1_number = os.path.basename(os.path.dirname(os.path.dirname(os.path.dirname(path1))))
+        dir2_number = os.path.basename(os.path.dirname(os.path.dirname(os.path.dirname(path2))))
+
+        if year_month1 != year_month2:
+            return path1 if year_month1 > year_month2 else path2
+        else:
+            return path1 if dir1_number > dir2_number else path2
+
+    def parse_year_month(self, year_month):
+        try:
+            date = dateparser.parse(year_month, settings={"DATE_ORDER": "YMD"})
+            return date.strftime("%Y-%m") if date else None
+        except:
+            return None
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
