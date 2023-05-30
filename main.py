@@ -14,14 +14,12 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        # self.setWindowTitle("测试")
-        # self.initMenuBar()
-        # self.initMainWindows()
-        # self.showMaximized()
-        # dataOver = read_excel("D:\\projects\\python\\DPT\\2021年10月\\1018\\试验说明\\32.9.16-20211018-中通道.xlsx")
-        # self.root_folder_path = ""
-        # self.search_input.textChanged.connect(self.filterTreeView)
-        self.loadProjects("D:\\projects\\python\\DPT")
+        self.setWindowTitle("测试")
+        self.initMenuBar()
+        self.initMainWindows()
+        self.showMaximized()
+        self.root_folder_path = ""
+        self.search_input.textChanged.connect(self.filterTreeView)
 
 
 
@@ -96,7 +94,8 @@ class MainWindow(QMainWindow):
         if folder_path:
             print("选择的文件夹路径:", folder_path)
             self.root_folder_path = folder_path  # 保存文件夹路径
-            self.loadTreeView(folder_path)
+            # self.loadTreeView(folder_path)
+            self.loadTreeView1(folder_path)
 
     def loadTreeView(self, folder_path):
         """
@@ -117,7 +116,20 @@ class MainWindow(QMainWindow):
         self.tree_view.expandAll()
 
     def loadTreeView1(self, folder_path):
-        pass
+        model = QStandardItemModel()
+
+        # 加载根目录
+        root_item = QStandardItem(os.path.basename(folder_path))
+        root_item.setData(folder_path, Qt.UserRole)  # 设置根节点的路径属性
+        root_item.setEditable(False)  # 设置根节点不可编辑
+        model.appendRow(root_item)
+
+        dir_projects = self.loadProjects(folder_path)
+        self.loadSubDirectories1(root_item, dir_projects)
+
+        self.tree_view.setModel(model)
+        self.tree_view.header().setVisible(False)
+        self.tree_view.expandAll()
 
     def loadSubDirectories1(self, parent_item, projects_info):
         """
@@ -127,10 +139,18 @@ class MainWindow(QMainWindow):
             return None
         else:
            for first_key in projects_info.keys():
+               # 加载第一层级目录，工程大项
                item = QStandardItem(first_key)
                item.setData(first_key, Qt.UserRole)
                parent_item.appendRow(item)
-               self.
+
+               for second_key in projects_info[first_key].keys():
+                   # 加载第二层级目录，工程小项及路径属性
+                   project_path = projects_info[first_key][second_key]
+                   sub_Item = QStandardItem(second_key)
+                   sub_Item.setData(project_path, Qt.UserRole)
+                   item.appendRow(sub_Item)
+
 
 
 
@@ -213,36 +233,68 @@ class MainWindow(QMainWindow):
                     secrond_result = {}
 
                     if first_dir in result:
-                        path1 = result[dir_name][first_dir]
-                        path2 = os.path.join(root, dir_name)
+                        # 如果实验大组存在，判断实验小组是否存在，存在则比较路径，不存在则添加
+                        if secrond_dir in result[first_dir]:
+                            path1 = result[first_dir][secrond_dir]
+                            path2 = os.path.join(root, dir_name)
 
-                        new_path = self.compareDirs(path1, path2)
-                        result[dir_name][first_dir] = new_path if new_path is not None else path1
+                            new_path = self.compareDirs(path1, path2)
+                            result[first_dir][secrond_dir] = new_path if new_path is not None else path1
+                        else:
+                            dir_path = os.path.join(root, dir_name)
+                            result[first_dir][secrond_dir] = dir_path
+
                     else:
                         dir_path = os.path.join(root, dir_name)
                         secrond_result[secrond_dir] = dir_path
                         result[first_dir] = secrond_result
 
+                #     result[first_dir] = sorted(result[first_dir].items(), key=lambda x: x[0])
+
+                # result = sorted(result.items(), key=lambda x: x[0])
+
         return result
 
     def compareDirs(self, path1, path2):
+        """
+        比较两个目录，返回最新的目录
+        Args:
+            path1 (str): 目录1的路径
+            path2 (str): 目录2的路径
+
+        Returns:
+            str: 最新试验的目录路径
+        """
+
+        # 截取目录路径中的年月信息
         dir1_parent = os.path.dirname(os.path.dirname(os.path.dirname(path1)))
         dir2_parent = os.path.dirname(os.path.dirname(os.path.dirname(path2)))
+
         dir1_year_month = os.path.basename(dir1_parent)
         dir2_year_month = os.path.basename(dir2_parent)
 
         year_month1 = self.parse_year_month(dir1_year_month)
         year_month2 = self.parse_year_month(dir2_year_month)
 
-        dir1_number = os.path.basename(os.path.dirname(os.path.dirname(os.path.dirname(path1))))
-        dir2_number = os.path.basename(os.path.dirname(os.path.dirname(os.path.dirname(path2))))
+        # 截取目录路径中的试验编号信息
+        dir1_number = os.path.basename(os.path.dirname(os.path.dirname(path1)))
+        dir2_number = os.path.basename(os.path.dirname(os.path.dirname(path2)))
 
+        # 比较日期和试验编号，如果日期不同，返回日期最新的目录，如果日期相同，返回试验编号最大的目录
         if year_month1 != year_month2:
             return path1 if year_month1 > year_month2 else path2
         else:
             return path1 if dir1_number > dir2_number else path2
 
     def parse_year_month(self, year_month):
+        """
+        解析年月信息
+        Args:
+            year_month (str): 路径的年月信息
+
+        Returns:
+            str: xxxx-xx格式的年月信息
+        """
         try:
             date = dateparser.parse(year_month, settings={"DATE_ORDER": "YMD"})
             return date.strftime("%Y-%m") if date else None
