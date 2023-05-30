@@ -3,9 +3,9 @@ import re
 import sys
 import dateparser
 
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QAbstractTableModel
 from PyQt5.QtGui import QStandardItem, QStandardItemModel
-from PyQt5.QtWidgets import QApplication, QMainWindow, QAction, QMenu, QFileDialog, QSplitter, QTreeView, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QFrame
+from PyQt5.QtWidgets import QApplication, QMainWindow, QAction, QTableView, QMenu, QFileDialog, QSplitter, QTreeView, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QFrame
 
 from overviewdata import read_excel
 
@@ -20,10 +20,6 @@ class MainWindow(QMainWindow):
         self.showMaximized()
         self.root_folder_path = ""
         self.search_input.textChanged.connect(self.filterTreeView)
-
-
-
-
 
     def initMenuBar(self):
         """
@@ -66,6 +62,7 @@ class MainWindow(QMainWindow):
         tree_layout.addWidget(self.search_input)
         tree_layout.addWidget(self.tree_view)
         splitter.addWidget(self.tree_frame)
+        self.tree_view.clicked.connect(self.treeItemClicked) # 点击事件
 
         # 创建右侧的TabWidget控件
         tab_widget = QTabWidget()
@@ -83,6 +80,8 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(splitter)
 
+        # 增加QTablew
+
     def openFolder(self):
         """
         打开文件夹, 用于加载目录结构
@@ -94,28 +93,9 @@ class MainWindow(QMainWindow):
         if folder_path:
             print("选择的文件夹路径:", folder_path)
             self.root_folder_path = folder_path  # 保存文件夹路径
-            # self.loadTreeView(folder_path)
-            self.loadTreeView1(folder_path)
+            self.loadTreeView(folder_path)
 
     def loadTreeView(self, folder_path):
-        """
-        加载目录结构到QTreeView
-        """
-        model = QStandardItemModel()
-
-
-        root_item = QStandardItem(os.path.basename(folder_path))
-        root_item.setData(folder_path, Qt.UserRole)  # 设置根节点的路径属性
-        root_item.setEditable(False)  # 设置根节点不可编辑
-        model.appendRow(root_item)
-
-        self.loadSubDirectories(root_item, folder_path)
-
-        self.tree_view.setModel(model)
-        self.tree_view.header().setVisible(False)
-        self.tree_view.expandAll()
-
-    def loadTreeView1(self, folder_path):
         model = QStandardItemModel()
 
         # 加载根目录
@@ -125,13 +105,13 @@ class MainWindow(QMainWindow):
         model.appendRow(root_item)
 
         dir_projects = self.loadProjects(folder_path)
-        self.loadSubDirectories1(root_item, dir_projects)
+        self.loadSubDirectories(root_item, dir_projects)
 
         self.tree_view.setModel(model)
         self.tree_view.header().setVisible(False)
         self.tree_view.expandAll()
 
-    def loadSubDirectories1(self, parent_item, projects_info):
+    def loadSubDirectories(self, parent_item, projects_info):
         """
         递归加载子目录
         """
@@ -150,25 +130,6 @@ class MainWindow(QMainWindow):
                    sub_Item = QStandardItem(second_key)
                    sub_Item.setData(project_path, Qt.UserRole)
                    item.appendRow(sub_Item)
-
-
-
-
-    def loadSubDirectories(self, parent_item, folder_path, depth=2):
-        """
-        递归加载子目录
-        """
-        if depth <= 0:
-            return
-
-        for item_name in os.listdir(folder_path):
-            item_path = os.path.join(folder_path, item_name)
-
-            if os.path.isdir(item_path):
-                item = QStandardItem(item_name)
-                item.setData(item_path, Qt.UserRole)  # 设置节点的路径属性
-                parent_item.appendRow(item)
-                self.loadSubDirectories(item, item_path, depth - 1)
 
     def filterTreeView(self, keyword):
         """
@@ -215,43 +176,46 @@ class MainWindow(QMainWindow):
 
         return False
 
-
     def loadProjects(self, folder_path):
+        """
+        加载目录下的所有工程信息
+        @param folder_path: 目录路径
+        @return: 有效试验数据字典
+        """
+
         result = {}
         pattern = r'\d+\.\d+\.\d+'
 
         if not os.path.exists(folder_path) or not os.path.isdir(folder_path):
             return result
 
+        # 遍历目录下的所有文件夹 找到符合正则表达式的试验文件夹
         for root, dirs, files in os.walk(folder_path):
             for dir_name in dirs:
                 if re.match(pattern, dir_name):
-                    # 10.1.1 => 10 and 1.1
+                    # 10.1.1 => 10 and 1.1 试验大组和试验小组拆分
                     parts = dir_name.split(".", 1)
                     first_dir = parts[0]
                     secrond_dir = parts[1]
                     secrond_result = {}
 
+                    # 如果实验大组存在，判断实验小组是否存在，存在则比较路径，不存在则添加
                     if first_dir in result:
-                        # 如果实验大组存在，判断实验小组是否存在，存在则比较路径，不存在则添加
                         if secrond_dir in result[first_dir]:
                             path1 = result[first_dir][secrond_dir]
                             path2 = os.path.join(root, dir_name)
 
-                            new_path = self.compareDirs(path1, path2)
-                            result[first_dir][secrond_dir] = new_path if new_path is not None else path1
+                            result_path = self.compareDirs(path1, path2)
+                            new_path = result_path if result_path is not None else path1
+
+                            result[first_dir][secrond_dir] = os.path.normpath(new_path)
                         else:
                             dir_path = os.path.join(root, dir_name)
-                            result[first_dir][secrond_dir] = dir_path
-
+                            result[first_dir][secrond_dir] = os.path.normpath(dir_path)
                     else:
                         dir_path = os.path.join(root, dir_name)
-                        secrond_result[secrond_dir] = dir_path
+                        secrond_result[secrond_dir] = os.path.normpath(dir_path)
                         result[first_dir] = secrond_result
-
-                #     result[first_dir] = sorted(result[first_dir].items(), key=lambda x: x[0])
-
-                # result = sorted(result.items(), key=lambda x: x[0])
 
         return result
 
@@ -301,6 +265,70 @@ class MainWindow(QMainWindow):
         except:
             return None
 
+    def treeItemClicked(self, index):
+        """树节点点击事件(二级节点，加载面板数据，状态栏显示当前文件路径)
+
+        Args:
+            index (_type_): 节点index
+        """
+        item = self.tree_view.model().itemFromIndex(index)
+        if item.parent() and not item.hasChildren():
+            # 仅处理二级节点（试验小项）的点击事件
+            file_path = item.data(Qt.UserRole)
+            data = read_excel(file_path)  # 从 Excel 中读取数据，得到一个二维列表
+            self.loadExcelData(data)  # 将数据加载到表格控件中
+
+    def loadExcelData(self, excel_data):
+        """
+        将 Excel 数据加载到表格控件中
+        @param excel_data: Excel 数据
+        """
+        # 清除表格中的数据
+        widget = self.tab_widget.widget(0)
+        for child in widget.children():
+            if isinstance(child, QTableView):
+                child.setParent(None)
+
+        model = ExcelTableModel()
+        table_view = QTableView()
+        table_view.setModel(model)
+        widget.layout().addWidget(table_view)
+
+        for row in range(len(excel_data)):
+            for col in range(len(excel_data[row])):
+                item = QStandardItem(excel_data[row][col])
+                model.setItem(row, col, item)
+
+        table_view.resizeColumnsToContents()
+        table_view.resizeRowsToContents()
+        table_view.horizontalHeader().setStretchLastSection(True)
+        table_view.verticalHeader().setSectionResizeMode(QTableView.ResizeToContents)
+
+class ExcelTableModel(QStandardItemModel):
+    """Excel model
+
+    Args:
+        QStandardItemModel (_type_): _description_
+    """
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+    def data(self, index, role=Qt.DisplayRole):
+        if role == Qt.DisplayRole:
+            item = self.itemFromIndex(index)
+            if item:
+                return item.text()
+
+        return super().data(index, role)
+
+    def headerData(self, section, orientation, role=Qt.DisplayRole):
+        if role == Qt.DisplayRole:
+            if orientation == Qt.Horizontal:
+                return self.horizontalHeaderItem(section).text()
+            elif orientation == Qt.Vertical:
+                return self.verticalHeaderItem(section).text()
+
+        return super().headerData(section, orientation, role)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
