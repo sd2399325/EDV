@@ -7,6 +7,7 @@ from PyQt5.QtCore import Qt, QAbstractTableModel
 from PyQt5.QtGui import QStandardItem, QStandardItemModel
 from PyQt5.QtWidgets import QApplication, QMainWindow, QAction, QTableView, QMenu, QFileDialog, QSplitter, QTreeView, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QFrame
 
+from openpyxl import load_workbook
 from overviewdata import read_excel
 
 
@@ -208,13 +209,13 @@ class MainWindow(QMainWindow):
                             result_path = self.compareDirs(path1, path2)
                             new_path = result_path if result_path is not None else path1
 
-                            result[first_dir][secrond_dir] = os.path.normpath(new_path)
+                            result[first_dir][secrond_dir] = new_path.replace("\\", "/")
                         else:
                             dir_path = os.path.join(root, dir_name)
-                            result[first_dir][secrond_dir] = os.path.normpath(dir_path)
+                            result[first_dir][secrond_dir] = dir_path.replace("\\", "/")
                     else:
                         dir_path = os.path.join(root, dir_name)
-                        secrond_result[secrond_dir] = os.path.normpath(dir_path)
+                        secrond_result[secrond_dir] = dir_path.replace("\\", "/")
                         result[first_dir] = secrond_result
 
         return result
@@ -275,6 +276,9 @@ class MainWindow(QMainWindow):
         if item.parent() and not item.hasChildren():
             # 仅处理二级节点（试验小项）的点击事件
             file_path = item.data(Qt.UserRole)
+            # 获取试验名称
+            project_name = os.path.basename(file_path)
+
             data = read_excel(file_path)  # 从 Excel 中读取数据，得到一个二维列表
             self.loadExcelData(data)  # 将数据加载到表格控件中
 
@@ -303,6 +307,7 @@ class MainWindow(QMainWindow):
         table_view.resizeRowsToContents()
         table_view.horizontalHeader().setStretchLastSection(True)
         table_view.verticalHeader().setSectionResizeMode(QTableView.ResizeToContents)
+
 
 class ExcelTableModel(QStandardItemModel):
     """Excel model
