@@ -1,11 +1,12 @@
 import os
+import glob
 import re
 import sys
 import dateparser
 
 from PyQt5.QtCore import Qt, QAbstractTableModel
 from PyQt5.QtGui import QStandardItem, QStandardItemModel
-from PyQt5.QtWidgets import QApplication, QMainWindow, QAction, QTableView, QMenu, QFileDialog, QSplitter, QTreeView, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QFrame
+from PyQt5.QtWidgets import QApplication, QMainWindow, QAction, QTableView, QMenu, QFileDialog, QSplitter, QTreeView, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QFrame, QLabel, QComboBox,QPushButton
 
 from openpyxl import load_workbook
 from overviewdata import read_excel
@@ -68,7 +69,39 @@ class MainWindow(QMainWindow):
         # 创建右侧的TabWidget控件
         tab_widget = QTabWidget()
         tab_widget.addTab(QWidget(), "概述")
-        tab_widget.addTab(QWidget(), "截屏")
+
+        # 创建“截屏”页控件
+        screenshot_widget = QWidget()
+        screenshot_layout = QVBoxLayout(screenshot_widget)
+
+        # 添加显示图片的控件
+        image_label = QLabel()
+        screenshot_layout.addWidget(image_label)
+
+        # 添加下拉框，上下也按钮和显示页码的控件 的水平布局
+        screenshot_control_layout = QHBoxLayout()
+        screenshot_layout.addLayout(screenshot_control_layout)
+
+        # 添加下拉框
+        step_switch_label = QLabel("步骤切换")
+        interface_switch_label = QLabel("界面切换")
+        step_switch_dropdown = QComboBox()
+        interface_switch_dropdown = QComboBox()
+        screenshot_control_layout.addWidget(step_switch_label)
+        screenshot_control_layout.addWidget(step_switch_dropdown)
+        screenshot_control_layout.addWidget(interface_switch_label)
+        screenshot_control_layout.addWidget(interface_switch_dropdown)
+
+        # 添加上下页按钮及显示页码的控件
+        prev_button = QPushButton("上一页")
+        next_button = QPushButton("下一页")
+        page_label = QLabel()
+        screenshot_control_layout.addWidget(prev_button)
+        screenshot_control_layout.addWidget(page_label)
+        screenshot_control_layout.addWidget(next_button)
+
+        tab_widget.addTab(screenshot_widget, "截屏")
+
         tab_widget.addTab(QWidget(), "录波")
         tab_widget.addTab(QWidget(), "报文")
         splitter.addWidget(tab_widget)
@@ -308,6 +341,43 @@ class MainWindow(QMainWindow):
         table_view.horizontalHeader().setStretchLastSection(True)
         table_view.verticalHeader().setSectionResizeMode(QTableView.ResizeToContents)
 
+    def generate_step_options(self, path):
+        """生成步骤下拉框的选项"""
+        step_options = []
+        if os.path.exists(path):
+            step_folders = sorted(glob.glob(os.path.join(path, "**")))
+            for folder in step_folders:
+                step_options.append(os.path.basename(folder))
+
+        return step_options
+
+    def generate_category_options(self,path):
+        """生成功能大类下拉框的选项"""
+        category_options = []  # 创建空列表用于存储功能大类选项
+
+        if os.path.exists(path):  # 检查给定路径是否存在
+            screenshot_files = glob.glob(os.path.join(path, '*.png'))  # 获取所有截屏文件
+
+            for file in screenshot_files:
+                filename = os.path.basename(file)  # 获取文件名
+                category_name = filename.split('_')[0]  # 提取功能大类名称
+                if category_name not in category_options:  # 确保功能大类不重复
+                    category_options.append(category_name)  # 将功能大类添加到选项列表
+
+        return category_options
+
+    def load_screenshots(self, path):
+        """加载截屏文件"""
+        screenshots = []
+        if os.path.exists(path):
+            image_files = glob.glob(os.path.join(path, '*.PNG'))
+            for file in image_files:
+                screenshots.append(file)
+        return screenshots
+
+    def load_screensshots_info(self, path):
+        """加载截屏文件路径信息"""
+        pass
 
 class ExcelTableModel(QStandardItemModel):
     """Excel model
