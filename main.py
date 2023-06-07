@@ -3,17 +3,30 @@ import re
 import sys
 import dateparser
 import codecs
-import pandas as pd
 
+from excel import convert_excel_to_html, split_string, split_txt_line
+from PyQt5 import QtCore
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QStandardItem, QStandardItemModel, QPixmap
-from PyQt5.QtWidgets import QApplication, QMainWindow, QAction, QTableView, QTableWidget,QTableWidgetItem, QFileDialog, QSplitter, QTreeView, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QFrame, QLabel, QComboBox,QPushButton,QPlainTextEdit
-
+from PyQt5.QtGui import QStandardItem, QStandardItemModel, QPixmap, QColor
+from PyQt5.QtWidgets import QApplication, QMainWindow, QAction, QTableView, QTableWidget,QTableWidgetItem, QFileDialog, QSplitter, QTreeView, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QFrame, QLabel, QComboBox,QPushButton
+from PyQt5.QtWebEngineWidgets import QWebEngineView
 from openpyxl import load_workbook
-from openpyxl.drawing.image import Image
+from openpyxl.utils import range_boundaries
+
+
+
 
 
 class MainWindow(QMainWindow):
+
+    # 定义事件等级枚举值和对应的颜色
+    event_levels_colors = {
+        '正常': Qt.gray,
+        '轻微': Qt.green,
+        '报警': Qt.yellow,
+        '严重告警': Qt.darkYellow,
+        '紧急': Qt.red
+    }
 
     global_png_dict = {}    # 当前所有图片路径字典
     global_now_png = ""     # 当前图片路径
@@ -28,6 +41,7 @@ class MainWindow(QMainWindow):
         self.initMainWindows()
         self.showMaximized()
         self.root_folder_path = ""
+        self.temp_folder_path = ""
         self.search_input.textChanged.connect(self.filterTreeView)
 
     def initMenuBar(self):
@@ -78,10 +92,9 @@ class MainWindow(QMainWindow):
         self.tab_widget = QTabWidget(self)
 
         # 创建”概述“页控件
-        self.overview_textedit = QPlainTextEdit()
-        self.tab_widget.addTab(self.overview_textedit, "概述")
+        self.webview = QWebEngineView()
+        self.tab_widget.addTab(self.webview, "概述")
 
-        # self.tab_widget.addTab(self.table_widget, "概述")
 
         # 创建“截屏”页控件
         screenshot_widget = QWidget()
@@ -124,12 +137,13 @@ class MainWindow(QMainWindow):
         self.tab_widget.addTab(QWidget(), "录波")
 
         # 创建“报文”页控件
-        self.message_tab = QWidget()
-        self.tab_widget.addTab(self.message_tab, "报文")
-        # 创建报文表格控件
-        layout = QVBoxLayout(self.message_tab)
-        self.table = QTableWidget()
-        layout.addWidget(self.table)
+        self.message_model = QStandardItemModel()
+        self.message_model.setHorizontalHeaderLabels(['时间', '主机', '系统告警', '事件等级', '报警组', '事件列表'])
+        # 创建QTableView并设置数据模型
+        self.message_table = QTableView()
+        self.message_table.setModel(self.message_model)
+        self.message_table.verticalHeader().setVisible(False)
+        self.tab_widget.addTab(self.message_table, "报文")
 
         splitter.addWidget(self.tab_widget)
 
@@ -155,6 +169,9 @@ class MainWindow(QMainWindow):
             print("选择的文件夹路径:", folder_path)
             self.root_folder_path = folder_path  # 保存文件夹路径
             self.loadTreeView(folder_path)
+            self.temp_folder_path = os.path.join(folder_path, "temp")
+            if not os.path.exists(self.temp_folder_path):
+                os.mkdir(os.path.join(self.temp_folder_path))
 
     def loadTreeView(self, folder_path):
         model = QStandardItemModel()
@@ -332,137 +349,32 @@ class MainWindow(QMainWindow):
             self.global_next_png = []
             self.global_now_png = ""
             self.global_png_dict = self.load_screenshots_path(file_path)
-            self.load_excel_data(file_path)
+            self.load_overview_data(file_path)
             self.generate_step_options()
             self.load_data_from_file(file_path)
 
-    def loadExcelData(self, excel_data):
+    def load_overview_data(self, project_path):
+        """加载概述数据
+
+        Args:
+            file_path (str): 试验大项路径
         """
-        将 Excel 数据加载到表格控件中
-        @param excel_data: Excel 数据
-        """
-        # 清除表格中的数据
-        widget = self.tab_widget.widget(0)
-        for child in widget.children():
-            if isinstance(child, QTableView):
-                child.setParent(None)
-
-        model = ExcelTableModel()
-        table_view = QTableView()
-        table_view.setModel(model)
-        widget.layout().addWidget(table_view)
-
-        for row in range(len(excel_data)):
-            for col in range(len(excel_data[row])):
-                item = QStandardItem(excel_data[row][col])
-                model.setItem(row, col, item)
-
-        table_view.resizeColumnsToContents()
-        table_view.resizeRowsToContents()
-        table_view.horizontalHeader().setStretchLastSection(True)
-        table_view.verticalHeader().setSectionResizeMode(QTableView.ResizeToContents)
-
-    def load_excel_data(self,file_path):
         # 拆解文件路径，获取文件名
-        project_name = os.path.basename(file_path)
-        root_path = os.path.dirname(os.path.dirname(file_path))
+        project_name = os.path.basename(project_path)
+        root_path = os.path.dirname(os.path.dirname(project_path))
         excel_path = os.path.normpath(os.path.join(root_path, "试验说明"))
 
         if not os.path.exists(excel_path):
             return None
 
-        project_excel_path = self.join_excel_path(excel_path, project_name)
+        # 读取excel文件并转存到指定目录的temp.html文件中
+        overview_excel_path = self.join_excel_path(excel_path, project_name)
+        excel_html_path = os.path.normpath(os.path.join(self.temp_folder_path, "temp.html"))
+        convert_excel_to_html(overview_excel_path, excel_html_path)
 
-        wb = load_workbook(project_excel_path, read_only=True, data_only=True)
-        sheet_names = wb.sheetnames
-        overview_text = ""
-
-        for sheet_name in sheet_names:
-            sheet = wb[sheet_name]
-            overview_text += f"Sheet: {sheet_name}\n\n"
-
-            for row in sheet.iter_rows(values_only=True):
-                overview_text += "\t".join(str(cell) for cell in row) + "\n"
-
-            overview_text += "\n"
-
-        self.overview_textedit.setPlainText(overview_text)
-
-    def load_excel_data1(self, file_path):
-        # 拆解文件路径，获取文件名
-        project_name = os.path.basename(file_path)
-        root_path = os.path.dirname(os.path.dirname(file_path))
-        excel_path = os.path.normpath(os.path.join(root_path, "试验说明"))
-
-        if not os.path.exists(excel_path):
-            return None
-
-        project_excel_path = self.join_excel_path(excel_path, project_name)
-        workbook = load_workbook(project_excel_path, read_only=False, data_only=True)
-        sheet_names = workbook.sheetnames
-
-        for sheet_name in sheet_names:
-            sheet = workbook[sheet_name]
-
-            rows = sheet.max_row
-            cols = sheet.max_column
-
-            self.table_widget.setRowCount(rows)
-            self.table_widget.setColumnCount(cols)
-
-            for row in range(1, rows + 1):
-                for col in range(1, cols + 1):
-                    cell = sheet.cell(row=row, column=col)
-
-                    # 处理合并单元格
-                    if cell.coordinate in sheet.merged_cells:
-                        continue
-
-                    # 处理图片信息
-                    if isinstance(cell, Image):
-                        img = cell.image
-                        img_data = img._data
-                        pixmap = QPixmap()
-                        pixmap.loadFromData(img_data)
-                        item = QTableWidgetItem()
-                        item.setData(0, pixmap)
-                        self.table_widget.setItem(row - 1, col - 1, item)
-                    else:
-                        cell_value = cell.value
-                        item = QTableWidgetItem(str(cell_value))
-                        self.table_widget.setItem(row - 1, col - 1, item)
-
-            # 处理合并行和合并列
-            for range_string in sheet.merged_cells.ranges:
-                min_row, min_col, max_row, max_col = range_string.bounds
-                if min_row != max_row or min_col != max_col:
-                    for row in range(min_row, max_row + 1):
-                        for col in range(min_col, max_col + 1):
-                            cell_value = sheet.cell(row=row, column=col).value
-                            item = QTableWidgetItem(str(cell_value))
-                            self.table_widget.setItem(row - 1, col - 1, item)
-
-            # 创建标签页并添加到QTabWidget
-            tab = QWidget()
-
-            self.tab_widget.addTab(tab, sheet_name)
-
-            # 在标签页上放置QTableWidget
-            table_widget = QTableWidget(tab)
-            table_widget.setRowCount(rows)
-            table_widget.setColumnCount(cols)
-
-            # 将数据填充到QTableWidget中
-            for row in range(1, rows + 1):
-                for col in range(1, cols + 1):
-                    cell = sheet.cell(row=row, column=col)
-                    cell_value = cell.value
-                    item = QTableWidgetItem(str(cell_value))
-                    table_widget.setItem(row - 1, col - 1, item)
-
-            tab_layout = QVBoxLayout()
-            tab_layout.addWidget(table_widget)
-            tab.setLayout(tab_layout)
+        # 加载temp.html文件
+        html_file_path = os.path.abspath(excel_html_path)
+        self.webview.load(QtCore.QUrl.fromLocalFile(html_file_path))
 
     def join_excel_path(self, excel_path, project_name):
         for root, dirs, files in os.walk(excel_path):
@@ -611,60 +523,25 @@ class MainWindow(QMainWindow):
 
         # 拼接filename
         project_name = os.path.basename(path)
-        filename = project_name + ".txt"
-        filepath = os.path.normpath(os.path.join(path, filename))
+        file_name = project_name + ".txt"
+        txt_path = os.path.normpath(os.path.join(path, file_name))
 
-        # 目前存储的文件编码格式为gb2312
-        with codecs.open(filepath, 'r', 'gb2312') as file:
+        if not os.path.exists(txt_path):
+            return None
+
+        with open(txt_path, 'r', encoding='gb2312') as file:
             lines = file.readlines()
+            lines = [line.strip() for line in lines]
 
-        # 解析列头
-        column_names = lines[0].strip().split('\t')
+            # 按时间先后排序
+            lines.sort(key=lambda x: x.split()[0])
 
-        # 设置表格行数和列数
-        num_rows = len(lines) - 1  # 减去列头行
-        num_cols = len(column_names)
-        self.table.setRowCount(num_rows)
-        self.table.setColumnCount(num_cols)
+            for line in lines:
+                items = split_txt_line(line, self.event_levels_colors)
 
-        # 设置列头
-        self.table.setHorizontalHeaderLabels(column_names)
+                # 将QStandardItem添加到数据模型中
+                self.message_model.appendRow(items)
 
-        # 设置列的水平对齐方式为左对齐
-        header = self.table.horizontalHeader()
-        header.setDefaultAlignment(Qt.AlignLeft)
-
-        # 填充表格数据
-        for row, line in enumerate(lines[1:], start=0):  # 从第二行开始
-            data = line.strip().split('\t')
-            if len(data) == num_cols:
-                for col, item in enumerate(data):
-                    table_item = QTableWidgetItem(item)
-                    table_item.setTextAlignment(Qt.AlignLeft)  # 设置单元格内容居左对齐
-                    self.table.setItem(row, col, table_item)
-
-        # 调整表格大小以适应内容
-        self.table.resizeColumnsToContents()
-        self.table.resizeRowsToContents()
-
-class ExcelTableModel(QStandardItemModel):
-    """Excel model
-
-    Args:
-        QStandardItemModel (_type_): _description_
-    """
-    def __init__(self, parent=None):
-        super().__init__(parent)
-
-    def data(self, index, role=Qt.DisplayRole):
-        if role == Qt.DisplayRole:
-            item = self.itemFromIndex(index)
-            if item:
-                return item.text()
-
-        return super().data(index, role)
-
-    def headerData(self, section, orientation, role=Qt.DisplayRole):
         if role == Qt.DisplayRole:
             if orientation == Qt.Horizontal:
                 return self.horizontalHeaderItem(section).text()
