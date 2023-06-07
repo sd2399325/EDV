@@ -542,13 +542,6 @@ class MainWindow(QMainWindow):
                 # 将QStandardItem添加到数据模型中
                 self.message_model.appendRow(items)
 
-        if role == Qt.DisplayRole:
-            if orientation == Qt.Horizontal:
-                return self.horizontalHeaderItem(section).text()
-            elif orientation == Qt.Vertical:
-                return self.verticalHeaderItem(section).text()
-
-        return super().headerData(section, orientation, role)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
