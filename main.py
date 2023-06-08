@@ -10,8 +10,7 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QStandardItem, QStandardItemModel, QPixmap, QColor
 from PyQt5.QtWidgets import QApplication, QMainWindow, QAction, QTableView, QTableWidget,QTableWidgetItem, QFileDialog, QSplitter, QTreeView, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QFrame, QLabel, QComboBox,QPushButton
 from PyQt5.QtWebEngineWidgets import QWebEngineView
-from openpyxl import load_workbook
-from openpyxl.utils import range_boundaries
+from ComtradeWidget import ComtradeWidget
 
 
 
@@ -133,8 +132,8 @@ class MainWindow(QMainWindow):
         self.prev_button.clicked.connect(self.previous_image)
         self.next_button.clicked.connect(self.next_image)
 
-
-        self.tab_widget.addTab(QWidget(), "录波")
+        self.comtrade_widget = ComtradeWidget("")
+        self.tab_widget.addTab(self.comtrade_widget, "录波")
 
         # 创建“报文”页控件
         self.message_model = QStandardItemModel()
@@ -351,6 +350,8 @@ class MainWindow(QMainWindow):
             self.global_png_dict = self.load_screenshots_path(file_path)
             self.load_overview_data(file_path)
             self.generate_step_options()
+            wave_path = os.path.normpath(os.path.join(file_path, "wave"))
+            self.comtrade_widget.load_time_tree(wave_path)
             self.load_data_from_file(file_path)
 
     def load_overview_data(self, project_path):
