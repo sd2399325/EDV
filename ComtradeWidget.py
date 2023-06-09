@@ -1,5 +1,5 @@
 import os
-from PyQt5.QtWidgets import QApplication, QMainWindow, QTreeView, QWidget, QVBoxLayout, QHBoxLayout, QLabel
+from PyQt5.QtWidgets import  QTreeView, QWidget, QVBoxLayout, QHBoxLayout, QLabel
 from PyQt5.QtGui import QStandardItemModel, QStandardItem
 from PyQt5.QtCore import Qt
 

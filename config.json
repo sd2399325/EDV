@@ -1,0 +1,11 @@
+{
+    "default_folder": "",
+    "window_title": "My GUI Application",
+    "maximized": true,
+    "theme": "light",
+    "wave_app": {
+      "name": "",
+      "path": "",
+      "arguments": ""
+    }
+  }

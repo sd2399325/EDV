@@ -1,20 +1,15 @@
 import os
 import re
 import sys
-import dateparser
-import codecs
-
-from excel import convert_excel_to_html, split_string, split_txt_line
+import threading
+from excel import convert_excel_to_html, split_txt_line
+from natsort import natsorted
 from PyQt5 import QtCore
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QStandardItem, QStandardItemModel, QPixmap, QColor
-from PyQt5.QtWidgets import QApplication, QMainWindow, QAction, QTableView, QTableWidget,QTableWidgetItem, QFileDialog, QSplitter, QTreeView, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QFrame, QLabel, QComboBox,QPushButton
+from PyQt5.QtGui import QStandardItem, QStandardItemModel, QPixmap
+from PyQt5.QtWidgets import QApplication, QMainWindow, QAction, QTableView,  QFileDialog, QSplitter, QTreeView, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QFrame, QLabel, QComboBox,QPushButton, QScrollArea
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from ComtradeWidget import ComtradeWidget
-
-
-
-
 
 class MainWindow(QMainWindow):
 
@@ -38,10 +33,11 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("测试")
         self.initMenuBar()
         self.initMainWindows()
+        # self.create_main_windows()
         self.showMaximized()
         self.root_folder_path = ""
         self.temp_folder_path = ""
-        self.search_input.textChanged.connect(self.filterTreeView)
+        # self.search_input.textChanged.connect(self.filterTreeView)
 
     def initMenuBar(self):
         """
@@ -73,17 +69,15 @@ class MainWindow(QMainWindow):
         """
         初始化主窗口
         """
-        splitter = QSplitter(self)
 
         # 创建左侧的TreeView控件
         self.tree_frame = QFrame()
         self.tree_frame.setFrameShape(QFrame.StyledPanel)  # 设置边框样式
-        tree_layout = QVBoxLayout(self.tree_frame)
+        self.tree_layout = QVBoxLayout(self.tree_frame)
         self.search_input = QLineEdit()
         self.tree_view = QTreeView()
-        tree_layout.addWidget(self.search_input)
-        tree_layout.addWidget(self.tree_view)
-        splitter.addWidget(self.tree_frame)
+        self.tree_layout.addWidget(self.search_input)
+        self.tree_layout.addWidget(self.tree_view)
         self.tree_view.clicked.connect(self.treeItemClicked) # 点击事件
 
 
@@ -144,17 +138,114 @@ class MainWindow(QMainWindow):
         self.message_table.verticalHeader().setVisible(False)
         self.tab_widget.addTab(self.message_table, "报文")
 
-        splitter.addWidget(self.tab_widget)
+        # 创建 QScrollArea 控件并将 tab_widget 放入其中
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setWidget(self.tab_widget)
+
+        splitter = QSplitter(self)
+        splitter.addWidget(self.tree_frame)
+        splitter.addWidget(scroll_area)
 
         # 设置QSplitter的布局方式为水平布局
         splitter.setOrientation(Qt.Horizontal)
 
         # 设置TreeView的宽度为TabWidget宽度的1/5
-        splitter.setSizes([round(self.width() / 5), round(self.width() * 4 / 5)])
+        splitter.setSizes([self.width() * 0.20, self.width() * 0.80])
 
         self.setCentralWidget(splitter)
 
-        # 增加QTablew
+    def create_main_windows(self):
+        # 创建输入框
+        line_edit = QLineEdit()
+
+        # 创建 QTreeView 控件
+        tree_view = QTreeView()
+        tree_view.clicked.connect(self.treeItemClicked) # 点击事件
+
+        # 创建 QTabWidget 控件
+        tab_widget = QTabWidget()
+
+        # 创建四个 Tab 页
+        # 创建”概述“页控件
+        webview = QWebEngineView()
+
+
+        # 创建“截屏”页控件
+        screenshot_widget = QWidget()
+        screenshot_layout = QVBoxLayout(screenshot_widget)
+
+        # 添加显示图片的控件
+        image_label = QLabel()
+        image_label.setFixedSize(1280, 720)
+        screenshot_layout.addWidget(image_label)
+
+        # 添加下拉框，上下也按钮和显示页码的控件 的水平布局
+        screenshot_control_layout = QHBoxLayout()
+        screenshot_layout.addLayout(screenshot_control_layout)
+
+         # 添加下拉框
+        step_switch_label = QLabel("步骤切换")
+        interface_switch_label = QLabel("界面切换")
+        step_switch_dropdown = QComboBox()
+        interface_switch_dropdown = QComboBox()
+        screenshot_control_layout.addWidget(step_switch_label)
+        screenshot_control_layout.addWidget(step_switch_dropdown)
+        screenshot_control_layout.addWidget(interface_switch_label)
+        screenshot_control_layout.addWidget(interface_switch_dropdown)
+        step_switch_dropdown.currentIndexChanged.connect(self.on_cbstep_changed)
+        interface_switch_dropdown.currentIndexChanged.connect(self.on_cbinterface_changed)
+
+        # 添加上下页按钮及显示页码的控件
+        prev_button = QPushButton("上一页")
+        next_button = QPushButton("下一页")
+        page_label = QLabel()
+        screenshot_control_layout.addWidget(prev_button)
+        screenshot_control_layout.addWidget(page_label)
+        screenshot_control_layout.addWidget(next_button)
+        prev_button.clicked.connect(self.previous_image)
+        next_button.clicked.connect(self.next_image)
+
+        # 创建“录波”tab页
+        comtrade_widget = ComtradeWidget("")
+
+        # 创建“报文”页控件
+        message_model = QStandardItemModel()
+        message_model.setHorizontalHeaderLabels(['时间', '主机', '系统告警', '事件等级', '报警组', '事件列表'])
+        # 创建QTableView并设置数据模型
+        message_table = QTableView()
+        message_table.setModel(message_model)
+        message_table.verticalHeader().setVisible(False)
+
+        tab_widget.addTab(webview, "概述")
+        tab_widget.addTab(screenshot_widget, "截屏")
+        tab_widget.addTab(comtrade_widget, "录波")
+        tab_widget.addTab(message_table, "报文")
+
+        # 创建垂直布局
+        frame = QFrame()
+        frame.setFrameShape(QFrame.StyledPanel)
+        tree_layout = QVBoxLayout(frame)
+        tree_layout.addWidget(line_edit)
+        tree_layout.addWidget(tree_view)
+
+        # 创建 QSplitter 控件
+        splitter = QSplitter(self)
+        splitter.addWidget(frame)
+        splitter.addWidget(tab_widget)
+        splitter.setOrientation(Qt.Horizontal)
+
+        # 设置 QSplitter 控件的大小比例为 25% 和 75%
+        splitter.setSizes([self.width() * 0.20, self.width() * 0.80])
+
+        # 创建主窗口的布局
+        main_layout = QVBoxLayout()
+        main_layout.addWidget(splitter)
+
+        # 创建主窗口的中心部件，并设置布局
+        central_widget = QWidget()
+        central_widget.setLayout(main_layout)
+        self.setCentralWidget(central_widget)
 
     def openFolder(self):
         """
@@ -180,9 +271,12 @@ class MainWindow(QMainWindow):
         root_item.setData(folder_path, Qt.UserRole)  # 设置根节点的路径属性
         root_item.setEditable(False)  # 设置根节点不可编辑
         model.appendRow(root_item)
-
         dir_projects = self.loadProjects(folder_path)
-        self.loadSubDirectories(root_item, dir_projects)
+        thread = threading.Thread(target=self.loadSubDirectories, args=(root_item, dir_projects))
+
+        # self.loadSubDirectories(root_item, dir_projects)
+        thread.start()
+        thread.join()
 
         self.tree_view.setModel(model)
         self.tree_view.header().setVisible(False)
@@ -195,13 +289,15 @@ class MainWindow(QMainWindow):
         if not projects_info:
             return None
         else:
-           for first_key in projects_info.keys():
+           first_keys = natsorted(projects_info.keys())
+           for first_key in first_keys:
                # 加载第一层级目录，工程大项
                item = QStandardItem(first_key)
                item.setData(first_key, Qt.UserRole)
                parent_item.appendRow(item)
 
-               sort_keys = sorted(projects_info[first_key].keys(), key=self.custom_sort)
+               sort_keys = natsorted(projects_info[first_key].keys())
+
 
                for second_key in sort_keys:
                    # 加载第二层级目录，工程小项及路径属性
@@ -261,7 +357,9 @@ class MainWindow(QMainWindow):
         """
 
         result = {}
-        pattern = r'\d+\.\d+\.\d+'
+        pattern_1 = r'.*试验说明.*'
+        pattern_2 = r'\d+\.\d'
+        pattern_3 = r'\d+\.\d+\.\d+'
 
         if not os.path.exists(folder_path) or not os.path.isdir(folder_path):
             return result
@@ -269,7 +367,7 @@ class MainWindow(QMainWindow):
         # 遍历目录下的所有文件夹 找到符合正则表达式的试验文件夹
         for root, dirs, files in os.walk(folder_path):
             for dir_name in dirs:
-                if re.match(pattern, dir_name):
+                if re.match(pattern_3, dir_name) or re.match(pattern_2, dir_name):
                     # 10.1.1 => 10 and 1.1 试验大组和试验小组拆分
                     parts = dir_name.split(".", 1)
                     first_dir = parts[0]
@@ -279,15 +377,22 @@ class MainWindow(QMainWindow):
                     # 如果实验大组存在，判断实验小组是否存在，存在则比较路径，不存在则添加
                     if first_dir in result:
                         if secrond_dir in result[first_dir]:
-                            path1 = result[first_dir][secrond_dir]
-                            path2 = os.path.join(root, dir_name)
+                            path2 = os.path.normpath(os.path.join(root, dir_name)).replace("\\", "/")
+                            # 清理试验说明路径
+                            if re.search(pattern_1, path2):
+                                continue
 
+                            path1 = result[first_dir][secrond_dir]
                             result_path = self.compareDirs(path1, path2)
                             new_path = result_path if result_path is not None else path1
 
-                            result[first_dir][secrond_dir] = new_path.replace("\\", "/")
+                            result[first_dir][secrond_dir] = new_path
                         else:
-                            dir_path = os.path.join(root, dir_name)
+                            dir_path = os.path.normpath(os.path.join(root, dir_name))
+                            # 清理试验说明路径
+                            if re.search(pattern_1, dir_path):
+                                continue
+
                             result[first_dir][secrond_dir] = dir_path.replace("\\", "/")
                     else:
                         dir_path = os.path.join(root, dir_name)
@@ -301,40 +406,40 @@ class MainWindow(QMainWindow):
         比较两个目录，返回最新的目录
         """
 
-        # 截取目录路径中的年月信息
-        dir1_parent = os.path.dirname(os.path.dirname(os.path.dirname(path1)))
-        dir2_parent = os.path.dirname(os.path.dirname(os.path.dirname(path2)))
+        year_month1 = ""
+        year_month2 = ""
+        number1 = ""
+        number2 = ""
+        pattern = r"(\d{4}年\d{1,2}月)/(\d{4})"
+        match1 = re.search(pattern, path1)
+        if match1:
+            year_month1 = match1.group(1)
+            number1 = match1.group(2)
 
-        dir1_year_month = os.path.basename(dir1_parent)
-        dir2_year_month = os.path.basename(dir2_parent)
+        match2 = re.search(pattern, path2)
+        if match2:
+            year_month2 = match2.group(1)
+            number2 = match2.group(2)
 
-        year_month1 = self.parse_year_month(dir1_year_month)
-        year_month2 = self.parse_year_month(dir2_year_month)
+        year_month1 = self.parse_year_month(year_month1)
+        year_month2 = self.parse_year_month(year_month2)
 
-        # 截取目录路径中的试验编号信息
-        dir1_number = os.path.basename(os.path.dirname(os.path.dirname(path1)))
-        dir2_number = os.path.basename(os.path.dirname(os.path.dirname(path2)))
 
         # 比较日期和试验编号，如果日期不同，返回日期最新的目录，如果日期相同，返回试验编号最大的目录
         if year_month1 != year_month2:
             return path1 if year_month1 > year_month2 else path2
         else:
-            return path1 if dir1_number > dir2_number else path2
+            return path1 if number1 > number2 else path2
 
     def parse_year_month(self, year_month):
         """
         解析年月信息
         """
         try:
-            date = dateparser.parse(year_month, settings={"DATE_ORDER": "YMD"})
-            return date.strftime("%Y-%m") if date else None
+            date =year_month.replace("年","-").replace("月","")
+            return date
         except:
             return None
-
-    def custom_sort(self, x):
-        """自定义排序"""
-        parts = x.split('.')
-        return (int(parts[0]), int(parts[1]))
 
     def treeItemClicked(self, index):
         """树节点点击事件(二级节点，加载面板数据，状态栏显示当前文件路径)
@@ -347,12 +452,30 @@ class MainWindow(QMainWindow):
             self.global_last_png = []
             self.global_next_png = []
             self.global_now_png = ""
-            self.global_png_dict = self.load_screenshots_path(file_path)
-            self.load_overview_data(file_path)
-            self.generate_step_options()
+
+            thread_step = threading.Thread(target=self.generate_step_options)
+            thread_step.start()
+            thread_step.join()
+
             wave_path = os.path.normpath(os.path.join(file_path, "wave"))
-            self.comtrade_widget.load_time_tree(wave_path)
-            self.load_data_from_file(file_path)
+            thread_wave = threading.Thread(target=self.comtrade_widget.load_time_tree, args=(wave_path,))
+            thread_wave.start()
+            thread_wave.join()
+
+            thread_data = threading.Thread(target=self.load_data_from_file, args=(file_path,))
+            thread_data.start()
+            thread_data.join()
+
+            thread_screenshots = threading.Thread(target=self.load_screenshots_path, args=(file_path,))
+            thread_screenshots.start()
+            thread_screenshots.join()
+
+            self.load_overview_data(file_path)
+
+
+
+
+
 
     def load_overview_data(self, project_path):
         """加载概述数据
@@ -364,12 +487,14 @@ class MainWindow(QMainWindow):
         project_name = os.path.basename(project_path)
         root_path = os.path.dirname(os.path.dirname(project_path))
         excel_path = os.path.normpath(os.path.join(root_path, "试验说明"))
-
-        if not os.path.exists(excel_path):
-            return None
-
         # 读取excel文件并转存到指定目录的temp.html文件中
         overview_excel_path = self.join_excel_path(excel_path, project_name)
+        if not overview_excel_path:
+            return None
+
+        if not os.path.exists(overview_excel_path):
+            return None
+
         excel_html_path = os.path.normpath(os.path.join(self.temp_folder_path, "temp.html"))
         convert_excel_to_html(overview_excel_path, excel_html_path)
 
@@ -425,9 +550,12 @@ class MainWindow(QMainWindow):
         """根据路径加载截屏文件"""
         if not os.path.exists(path):
             return
+
         pixmap = QPixmap(path)
+
         if pixmap.isNull():
             return
+
         scaled_pixmap = pixmap.scaled(self.image_label.size(), aspectRatioMode=Qt.KeepAspectRatio)
 
         self.image_label.setPixmap(scaled_pixmap)
@@ -469,6 +597,8 @@ class MainWindow(QMainWindow):
 
             step_png_dic[folder_name] = png_dict
 
+        self.global_png_dict = step_png_dic
+        self.generate_step_options()
         return step_png_dic
 
     def previous_image(self):
@@ -518,6 +648,7 @@ class MainWindow(QMainWindow):
             self.global_now_png = now_path
             self.current_png_list = values[key]
             self.current_png_index = 0
+            self.update_page_label()
 
     def load_data_from_file(self, path):
         """读取报文文件内容"""
@@ -542,7 +673,6 @@ class MainWindow(QMainWindow):
 
                 # 将QStandardItem添加到数据模型中
                 self.message_model.appendRow(items)
-
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
