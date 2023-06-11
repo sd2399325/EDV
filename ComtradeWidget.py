@@ -1,7 +1,11 @@
 import os
-from PyQt5.QtWidgets import  QTreeView, QWidget, QVBoxLayout, QHBoxLayout, QLabel
+import json
+import subprocess
+from PyQt5.QtWidgets import (
+    QTreeView, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QMenu, QAction
+)
 from PyQt5.QtGui import QStandardItemModel, QStandardItem
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QProcess
 
 class ComtradeWidget(QWidget):
     def __init__(self, wave_path):
@@ -60,6 +64,10 @@ class ComtradeWidget(QWidget):
         self.time_tree.clicked.connect(self.load_device_tree)
         self.device_tree.clicked.connect(self.load_waveform_tree)
 
+        # 设置节点双击事件处理函数
+        self.device_tree.doubleClicked.connect(self.open_wave_app)
+        self.waveform_tree.doubleClicked.connect(self.open_wave_app)
+
         # 将控件添加到布局中
         time_layout.addWidget(time_label)
         time_layout.addWidget(self.time_tree)
@@ -91,6 +99,7 @@ class ComtradeWidget(QWidget):
                 time_item.setTextAlignment(Qt.AlignCenter)  # 设置节点居中对齐
                 time_item.setText(folder_name)  # 设置时间文件夹名称
                 time_item.setData(folder_path, Qt.UserRole)  # 设置节点的绝对路径属性
+                time_item.setFlags(Qt.ItemIsEnabled)
                 self.time_model.appendRow(time_item)
 
     def load_device_tree(self, index):
@@ -117,6 +126,7 @@ class ComtradeWidget(QWidget):
                 device_item.setTextAlignment(Qt.AlignCenter)
                 device_item.setText(folder_name)
                 device_item.setData(subfolder_path, Qt.UserRole)
+                device_item.setFlags(Qt.ItemIsEnabled)
                 device_root_item.appendRow(device_item)
 
                 # 遍历二级文件夹
@@ -134,6 +144,7 @@ class ComtradeWidget(QWidget):
         self.device_tree.header().setVisible(False)
         self.device_tree.setExpandsOnDoubleClick(False)
         self.device_tree.setStyleSheet(self.style_sheet)
+
 
     def load_waveform_tree(self, index):
         # 获取点击的节点
@@ -154,16 +165,60 @@ class ComtradeWidget(QWidget):
         waveform_root_item = waveform_model.invisibleRootItem()
         waveform_root_item.setEditable(False)
 
-        for entry_name in os.listdir(folder_path):
-            entry_path = os.path.join(folder_path, entry_name)
-            entry_item = QStandardItem()
-            entry_item.setTextAlignment(Qt.AlignCenter)
-            entry_item.setText(entry_name)
-            entry_item.setData(entry_path, Qt.UserRole)
-            waveform_root_item.appendRow(entry_item)
+        self.load_waveform_items(folder_path, waveform_root_item)
 
         # 设置 waveform_tree 的数据模型
         self.waveform_tree.setModel(waveform_model)
         self.waveform_tree.header().setVisible(False)
         self.waveform_tree.setExpandsOnDoubleClick(False)
         self.waveform_tree.setStyleSheet(self.style_sheet)
+
+    def load_waveform_items(self, folder_path, parent_item):
+        for entry_name in os.listdir(folder_path):
+            entry_path = os.path.join(folder_path, entry_name)
+            entry_item = QStandardItem()
+            entry_item.setTextAlignment(Qt.AlignCenter)
+            entry_item.setText(entry_name)
+            entry_item.setData(entry_path, Qt.UserRole)
+            entry_item.setFlags(Qt.ItemIsEnabled)
+            parent_item.appendRow(entry_item)
+
+            if os.path.isdir(entry_path):
+                # 如果是文件夹，递归加载子文件夹和.cfg文件
+                self.load_waveform_items(entry_path, entry_item)
+            elif entry_name.endswith(".cfg"):
+                # 如果是.cfg文件，创建子节点并显示
+                cfg_item = QStandardItem()
+                cfg_item.setTextAlignment(Qt.AlignCenter)
+                cfg_item.setText("Config File: " + entry_name)
+                cfg_item.setData(entry_path, Qt.UserRole)
+                entry_item.appendRow(cfg_item)
+
+    def open_wave_app(self, index):
+        # 获取点击的节点
+        item = index.model().itemFromIndex(index)
+        if item is None:
+            return
+
+        # 判断节点的层级
+        if item.parent() is None:
+            # 一级节点，跳出
+            return
+
+        # 获取 cfg 文件路径
+        cfg_file_path = item.data(Qt.UserRole)
+
+        # 读取配置文件中的波形应用程序路径
+        config_file = "config.json"
+        if os.path.exists(config_file):
+            with open(config_file) as f:
+                config_data = json.load(f)
+                wave_app_path = config_data.get("wave_app")
+                if wave_app_path:
+                    # 构建命令行命令
+                    command = [wave_app_path, cfg_file_path]
+
+                    # 打开应用程序并传递 cfg 文件路径作为参数
+                    subprocess.run(command, shell=True)
+
+

@@ -1,6 +1,7 @@
 import os
 import re
 import sys
+import subprocess
 import threading
 from excel import convert_excel_to_html, split_txt_line
 from natsort import natsorted
@@ -10,6 +11,7 @@ from PyQt5.QtGui import QStandardItem, QStandardItemModel, QPixmap
 from PyQt5.QtWidgets import QApplication, QMainWindow, QAction, QTableView,  QFileDialog, QSplitter, QTreeView, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QFrame, QLabel, QComboBox,QPushButton, QScrollArea
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from ComtradeWidget import ComtradeWidget
+from SettingsDialog import SettingsDialog
 
 class MainWindow(QMainWindow):
 
@@ -51,14 +53,17 @@ class MainWindow(QMainWindow):
         open_folder_action = QAction("打开文件夹", self)
         open_folder_action.triggered.connect(self.openFolder)
         file_menu.addAction(open_folder_action)
-        file_menu.addAction("保存")
-        file_menu.addAction("退出")
+        setting_action = QAction("设置", self)
+        setting_action.triggered.connect(self.openSetting)
+        file_menu.addAction(setting_action)
+        # file_menu.addAction("保存")
+        # file_menu.addAction("退出")
 
-        # 创建编辑菜单
-        edit_menu = menu_bar.addMenu("编辑")
-        edit_menu.addAction("复制")
-        edit_menu.addAction("剪切")
-        edit_menu.addAction("粘贴")
+        # # 创建编辑菜单
+        # edit_menu = menu_bar.addMenu("编辑")
+        # edit_menu.addAction("复制")
+        # edit_menu.addAction("剪切")
+        # edit_menu.addAction("粘贴")
 
         # 创建帮助菜单
         help_menu = menu_bar.addMenu("帮助")
@@ -79,7 +84,7 @@ class MainWindow(QMainWindow):
         self.tree_layout.addWidget(self.search_input)
         self.tree_layout.addWidget(self.tree_view)
         self.tree_view.clicked.connect(self.treeItemClicked) # 点击事件
-
+        self.search_input.textChanged.connect(self.filterTreeView)
 
         # 创建右侧的TabWidget控件
         self.tab_widget = QTabWidget(self)
@@ -90,27 +95,27 @@ class MainWindow(QMainWindow):
 
 
         # 创建“截屏”页控件
-        screenshot_widget = QWidget()
-        screenshot_layout = QVBoxLayout(screenshot_widget)
+        self.screenshot_widget = QWidget()
+        self.screenshot_layout = QVBoxLayout(self.screenshot_widget)
 
         # 添加显示图片的控件
         self.image_label = QLabel()
-        self.image_label.setFixedSize(1280, 720)
-        screenshot_layout.addWidget(self.image_label)
+        self.image_label.setFixedSize(1440, 900)
+        self.screenshot_layout.addWidget(self.image_label)
 
         # 添加下拉框，上下也按钮和显示页码的控件 的水平布局
-        screenshot_control_layout = QHBoxLayout()
-        screenshot_layout.addLayout(screenshot_control_layout)
+        self.screenshot_control_layout = QHBoxLayout()
+        self.screenshot_layout.addLayout(self.screenshot_control_layout)
 
         # 添加下拉框
         step_switch_label = QLabel("步骤切换")
         interface_switch_label = QLabel("界面切换")
         self.step_switch_dropdown = QComboBox()
         self.interface_switch_dropdown = QComboBox()
-        screenshot_control_layout.addWidget(step_switch_label)
-        screenshot_control_layout.addWidget(self.step_switch_dropdown)
-        screenshot_control_layout.addWidget(interface_switch_label)
-        screenshot_control_layout.addWidget(self.interface_switch_dropdown)
+        self.screenshot_control_layout.addWidget(step_switch_label)
+        self.screenshot_control_layout.addWidget(self.step_switch_dropdown)
+        self.screenshot_control_layout.addWidget(interface_switch_label)
+        self.screenshot_control_layout.addWidget(self.interface_switch_dropdown)
         self.step_switch_dropdown.currentIndexChanged.connect(self.on_cbstep_changed)
         self.interface_switch_dropdown.currentIndexChanged.connect(self.on_cbinterface_changed)
 
@@ -118,11 +123,11 @@ class MainWindow(QMainWindow):
         self.prev_button = QPushButton("上一页")
         self.next_button = QPushButton("下一页")
         self.page_label = QLabel()
-        screenshot_control_layout.addWidget(self.prev_button)
-        screenshot_control_layout.addWidget(self.page_label)
-        screenshot_control_layout.addWidget(self.next_button)
+        self.screenshot_control_layout.addWidget(self.prev_button)
+        self.screenshot_control_layout.addWidget(self.page_label)
+        self.screenshot_control_layout.addWidget(self.next_button)
 
-        self.tab_widget.addTab(screenshot_widget, "截屏")
+        self.tab_widget.addTab(self.screenshot_widget, "截屏")
         self.prev_button.clicked.connect(self.previous_image)
         self.next_button.clicked.connect(self.next_image)
 
@@ -173,16 +178,19 @@ class MainWindow(QMainWindow):
 
         # 创建“截屏”页控件
         screenshot_widget = QWidget()
+        screenshot_widget.autoFillBackground()
         screenshot_layout = QVBoxLayout(screenshot_widget)
+        screenshot_layout.setAlignment(Qt.AlignCenter)
 
         # 添加显示图片的控件
         image_label = QLabel()
-        image_label.setFixedSize(1280, 720)
+        image_label.autoFillBackground()
         screenshot_layout.addWidget(image_label)
 
         # 添加下拉框，上下也按钮和显示页码的控件 的水平布局
         screenshot_control_layout = QHBoxLayout()
         screenshot_layout.addLayout(screenshot_control_layout)
+
 
          # 添加下拉框
         step_switch_label = QLabel("步骤切换")
@@ -193,6 +201,7 @@ class MainWindow(QMainWindow):
         screenshot_control_layout.addWidget(step_switch_dropdown)
         screenshot_control_layout.addWidget(interface_switch_label)
         screenshot_control_layout.addWidget(interface_switch_dropdown)
+        screenshot_control_layout.setSpacing(0)
         step_switch_dropdown.currentIndexChanged.connect(self.on_cbstep_changed)
         interface_switch_dropdown.currentIndexChanged.connect(self.on_cbinterface_changed)
 
@@ -247,6 +256,10 @@ class MainWindow(QMainWindow):
         central_widget.setLayout(main_layout)
         self.setCentralWidget(central_widget)
 
+    def openSetting(self):
+        dialog = SettingsDialog()
+        dialog.exec_()
+
     def openFolder(self):
         """
         打开文件夹, 用于加载目录结构
@@ -271,6 +284,7 @@ class MainWindow(QMainWindow):
         root_item.setData(folder_path, Qt.UserRole)  # 设置根节点的路径属性
         root_item.setEditable(False)  # 设置根节点不可编辑
         model.appendRow(root_item)
+
         dir_projects = self.loadProjects(folder_path)
         thread = threading.Thread(target=self.loadSubDirectories, args=(root_item, dir_projects))
 
@@ -337,9 +351,9 @@ class MainWindow(QMainWindow):
                 self.tree_view.expand(index.parent())
                 return True
 
-        index = item.index()
-        self.tree_view.setRowHidden(index.row(), index.parent(), True)  # 设置节点隐藏
-        return False
+            index = item.index()
+            self.tree_view.setRowHidden(index.row(), index.parent(), True)  # 设置节点隐藏
+            return False
 
     def matchItem(self, item, keyword):
         """
@@ -452,7 +466,6 @@ class MainWindow(QMainWindow):
             self.global_last_png = []
             self.global_next_png = []
             self.global_now_png = ""
-
             thread_step = threading.Thread(target=self.generate_step_options)
             thread_step.start()
             thread_step.join()
@@ -471,11 +484,6 @@ class MainWindow(QMainWindow):
             thread_screenshots.join()
 
             self.load_overview_data(file_path)
-
-
-
-
-
 
     def load_overview_data(self, project_path):
         """加载概述数据
@@ -501,6 +509,7 @@ class MainWindow(QMainWindow):
         # 加载temp.html文件
         html_file_path = os.path.abspath(excel_html_path)
         self.webview.load(QtCore.QUrl.fromLocalFile(html_file_path))
+        self.webview.setZoomFactor(1.2)
 
     def join_excel_path(self, excel_path, project_name):
         for root, dirs, files in os.walk(excel_path):
@@ -654,6 +663,10 @@ class MainWindow(QMainWindow):
         """读取报文文件内容"""
 
         # 拼接filename
+        rowCount = self.message_model.rowCount()
+        if rowCount > 0:
+            self.message_model.removeRows(1,rowCount-1)
+
         project_name = os.path.basename(path)
         file_name = project_name + ".txt"
         txt_path = os.path.normpath(os.path.join(path, file_name))
@@ -667,12 +680,23 @@ class MainWindow(QMainWindow):
 
             # 按时间先后排序
             lines.sort(key=lambda x: x.split()[0])
-
             for line in lines:
                 items = split_txt_line(line, self.event_levels_colors)
 
                 # 将QStandardItem添加到数据模型中
                 self.message_model.appendRow(items)
+
+    def tilePage(self):
+        # 将页面缩放级别设置为100%（实际大小）
+        self.webview.setZoomFactor(1.0)
+
+        # 调整窗口大小以适应页面
+        self.adjustSize()
+
+        # 获取窗口的大小
+        window_size = self.size()
+
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
