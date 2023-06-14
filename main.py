@@ -1,17 +1,20 @@
 import os
 import re
 import sys
-import subprocess
 import threading
+
+
 from excel import convert_excel_to_html, split_txt_line
 from natsort import natsorted
 from PyQt5 import QtCore
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QStandardItem, QStandardItemModel, QPixmap
-from PyQt5.QtWidgets import QApplication, QMainWindow, QAction, QTableView,  QFileDialog, QSplitter, QTreeView, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QFrame, QLabel, QComboBox,QPushButton, QScrollArea
+from PyQt5.QtWidgets import QApplication, QMainWindow, QAction, QTableView, QFileDialog, QSplitter, QTreeView, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QFrame, QLabel, QComboBox,QPushButton, QScrollArea,QMainWindow
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from ComtradeWidget import ComtradeWidget
 from SettingsDialog import SettingsDialog
+
+
 
 class MainWindow(QMainWindow):
 
@@ -32,6 +35,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
+
         self.setWindowTitle("测试")
         self.initMenuBar()
         self.initMainWindows()
@@ -39,7 +43,6 @@ class MainWindow(QMainWindow):
         self.showMaximized()
         self.root_folder_path = ""
         self.temp_folder_path = ""
-        # self.search_input.textChanged.connect(self.filterTreeView)
 
     def initMenuBar(self):
         """
@@ -56,14 +59,6 @@ class MainWindow(QMainWindow):
         setting_action = QAction("设置", self)
         setting_action.triggered.connect(self.openSetting)
         file_menu.addAction(setting_action)
-        # file_menu.addAction("保存")
-        # file_menu.addAction("退出")
-
-        # # 创建编辑菜单
-        # edit_menu = menu_bar.addMenu("编辑")
-        # edit_menu.addAction("复制")
-        # edit_menu.addAction("剪切")
-        # edit_menu.addAction("粘贴")
 
         # 创建帮助菜单
         help_menu = menu_bar.addMenu("帮助")
@@ -131,7 +126,7 @@ class MainWindow(QMainWindow):
         self.prev_button.clicked.connect(self.previous_image)
         self.next_button.clicked.connect(self.next_image)
 
-        self.comtrade_widget = ComtradeWidget("")
+        self.comtrade_widget = ComtradeWidget("f")
         self.tab_widget.addTab(self.comtrade_widget, "录波")
 
         # 创建“报文”页控件
@@ -424,7 +419,7 @@ class MainWindow(QMainWindow):
         year_month2 = ""
         number1 = ""
         number2 = ""
-        pattern = r"(\d{4}年\d{1,2}月)/(\d{4})"
+        pattern = r"(\d{4}-\d{1,2}月)/(\d{4})"
         match1 = re.search(pattern, path1)
         if match1:
             year_month1 = match1.group(1)
@@ -435,25 +430,12 @@ class MainWindow(QMainWindow):
             year_month2 = match2.group(1)
             number2 = match2.group(2)
 
-        year_month1 = self.parse_year_month(year_month1)
-        year_month2 = self.parse_year_month(year_month2)
-
 
         # 比较日期和试验编号，如果日期不同，返回日期最新的目录，如果日期相同，返回试验编号最大的目录
         if year_month1 != year_month2:
             return path1 if year_month1 > year_month2 else path2
         else:
             return path1 if number1 > number2 else path2
-
-    def parse_year_month(self, year_month):
-        """
-        解析年月信息
-        """
-        try:
-            date =year_month.replace("年","-").replace("月","")
-            return date
-        except:
-            return None
 
     def treeItemClicked(self, index):
         """树节点点击事件(二级节点，加载面板数据，状态栏显示当前文件路径)
