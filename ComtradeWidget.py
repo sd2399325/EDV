@@ -1,11 +1,13 @@
 import os
 import json
 import subprocess
+import locale
+from datetime import datetime
 from PyQt5.QtWidgets import (
-    QTreeView, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy
+    QTreeView, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy, QSplitter
 )
 from PyQt5.QtGui import QStandardItemModel, QStandardItem
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QModelIndex
 from natsort import natsorted
 
 
@@ -24,10 +26,19 @@ class ComtradeWidget(QWidget):
         # 创建主部件和布局
         main_layout = QHBoxLayout(self)
 
+        # 创建 QSplitter 控件
+        splitter = QSplitter(self)
+
+
+        # 创建三个QWidget 控件用来装在layout
+        time_widget = QWidget()
+        device_widget = QWidget()
+        waveform_widget = QWidget()
+
         # 创建三个垂直布局
-        time_layout = QVBoxLayout()
-        device_layout = QVBoxLayout()
-        waveform_layout = QVBoxLayout()
+        time_layout = QVBoxLayout(time_widget)
+        device_layout = QVBoxLayout(device_widget)
+        waveform_layout = QVBoxLayout(waveform_widget)
 
         # 创建三个 QTreeView 控件和 QLabel 控件
         self.time_tree = QTreeView()
@@ -63,9 +74,12 @@ class ComtradeWidget(QWidget):
 
         # 自定义样式表，调整节点之间的间距和节点文字字体大小
         self.style_sheet = """
+            QTreeView {
+                background-color: gray;
+            }
             QTreeView::item {
-                padding: 8px;  /* 调整节点之间的间距 */
-                font-size: 16px;  /* 调整节点文字的字体大小 */
+                padding: 8px;
+                font-size: 16px;
             }
         """
         self.time_tree.setStyleSheet(self.style_sheet)
@@ -75,7 +89,6 @@ class ComtradeWidget(QWidget):
         self.device_tree.clicked.connect(self.load_waveform_tree)
 
         # 设置节点双击事件处理函数
-        self.device_tree.doubleClicked.connect(self.open_wave_app)
         self.waveform_tree.doubleClicked.connect(self.open_wave_app)
 
         # 将控件添加到布局中
@@ -86,14 +99,21 @@ class ComtradeWidget(QWidget):
         waveform_layout.addWidget(waveform_label)
         waveform_layout.addWidget(self.waveform_tree)
 
+        self.device_tree.setStyleSheet(self.style_sheet)
         # 设置 time_tree 和 device_tree 的水平大小策略
-        self.time_tree.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
-        self.device_tree.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
+        self.time_tree.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.device_tree.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
-        # 将垂直布局添加到主布局
-        main_layout.addLayout(time_layout)
-        main_layout.addLayout(device_layout)
-        main_layout.addLayout(waveform_layout)
+        # 将QWidget 控件添加到 QSplitter 控件中
+        splitter.addWidget(time_widget)
+        splitter.addWidget(device_widget)
+        splitter.addWidget(waveform_widget)
+        splitter.setOrientation(Qt.Horizontal)
+        splitter.setSizes([self.width() * 0.25, self.width() * 0.25,self.width() * 0.50])
+        splitter.setLineWidth(0)
+
+        # 将splitter 控件添加到主布局中
+        main_layout.addWidget(splitter)
 
         # 加载时间列表的数据
         self.load_time_tree(wave_path)
@@ -107,12 +127,16 @@ class ComtradeWidget(QWidget):
 
         # 清空时间列表的数据
         self.time_model.removeRows(0, self.time_model.rowCount())
+        self.device_tree.setModel(QStandardItemModel())
+        self.waveform_tree.setModel(QStandardItemModel())
 
         # 查找时间key并填充控件
         for time_info in self.global_time_set:
+                time_format = self.convert_time(time_info)
                 time_item = QStandardItem()
                 time_item.setTextAlignment(Qt.AlignCenter)
-                time_item.setText(time_info)
+                time_item.setText(time_format)
+                time_item.setData(time_info, Qt.UserRole)
                 time_item.setFlags(Qt.ItemIsEnabled)
                 self.time_model.appendRow(time_item)
 
@@ -122,7 +146,7 @@ class ComtradeWidget(QWidget):
         device_root_item.setEditable(False)
 
         # 获取点击的节点
-        self.global_time_info = index.data(Qt.DisplayRole)
+        self.global_time_info = index.data(Qt.UserRole)
 
         if self.global_time_info is None:
             return
@@ -152,6 +176,7 @@ class ComtradeWidget(QWidget):
         # 设置 device_tree 的数据模型
         self.device_tree.setModel(device_model)
         self.device_tree.header().setVisible(False)
+        self.device_tree.expandAll()
         self.device_tree.setExpandsOnDoubleClick(False)
         self.device_tree.setStyleSheet(self.style_sheet)
 
@@ -176,22 +201,41 @@ class ComtradeWidget(QWidget):
         if device_info is None:
             return
 
-        self.find_wave(self.global_time_info, device_info)
+        self.find_wave(device_info)
 
         # 获取波形信息
-        for wave_info in self.global_wave_dic.keys():
-            wave_item = QStandardItem()
-            wave_item.setTextAlignment(Qt.AlignCenter)
-            wave_item.setText(wave_info)
-            wave_item.setData(self.global_wave_dic[wave_info], Qt.UserRole)
-            wave_item.setFlags(Qt.ItemIsEnabled)
-            waveform_model.appendRow(wave_item)
+        for time_str in self.global_wave_dic.keys():
+            time_info = self.convert_time(time_str)
+            time_item = QStandardItem()
+            time_item.setTextAlignment(Qt.AlignCenter)
+            time_item.setText(time_info)
+            time_item.setData(time_info, Qt.UserRole)
+            time_item.setFlags(Qt.ItemIsEnabled)
+            waveform_model.appendRow(time_item)
+
+            for wave_info in self.global_wave_dic[time_str]:
+                wave_item = QStandardItem()
+                wave_item.setTextAlignment(Qt.AlignCenter)
+                wave_item.setText(wave_info[0])
+                wave_item.setData(wave_info[1], Qt.UserRole)
+                wave_item.setFlags(Qt.ItemIsEnabled)
+                time_item.appendRow(wave_item)
 
         # 设置 waveform_tree 的数据模型
         self.waveform_tree.setModel(waveform_model)
         self.waveform_tree.header().setVisible(False)
+        self.waveform_tree.expandAll()
         self.waveform_tree.setExpandsOnDoubleClick(False)
-        self.waveform_tree.setStyleSheet(self.style_sheet)
+        self.style_waveform = """
+            QTreeView {
+                background-color: #e4e4e4;
+            }
+            QTreeView::item {
+                padding: 8px;
+                font-size: 16px;
+            }
+        """
+        self.waveform_tree.setStyleSheet(self.style_waveform)
 
     def load_waveform_items(self, folder_path, parent_item):
         for entry_name in os.listdir(folder_path):
@@ -261,8 +305,13 @@ class ComtradeWidget(QWidget):
             for file in files:
                 if file.endswith(".CFG") and time_info in file:
                     parts = file.split('_')
+                    device_info = ""
                     # 获取设备信息
-                    device_info = parts[1]
+                    if '-' in parts[1]:
+                        device_info = [part for part in parts[1].split('-') if part != '' and part != 'S1'][0]
+                    else:
+                        device_info = parts[1]
+
 
                     # 获取文件夹信息
                     fold_info = root.split('\\')[-3]
@@ -275,18 +324,30 @@ class ComtradeWidget(QWidget):
                         devices.append(device_info)
                         self.global_device_dic[fold_info] = devices
 
-
-    def find_wave(self, time_info, device_info):
+    def find_wave(self, device_info):
+        """查找波形"""
+        # {时间key:{波形key:路径value}}
+        # 增加一级节点用的时间key
         wave_fino_dic = {}
+        wave_info_dic= {}
+
         for root, dirs, files in os.walk(self.global_wave_path):
             for file in files:
-                if file.endswith(".CFG") and time_info in file and device_info in file:
+                if file.endswith(".CFG") and device_info in file:
                     # 提取录波文件信息和路径
                     parts = file.split('_')
-                    wave_info = '_'.join(parts[3:])
+                    time_info = '_'.join(parts[4:7])
+                    wave_info = parts[-1]
                     cfg_file_path = os.path.join(root, file)
-                    wave_fino_dic[wave_info] = cfg_file_path
+                    wave_info_dic[wave_info] = cfg_file_path
+                    sort_dic = natsorted(wave_info_dic.items(), key=lambda x: x[0])
+                    wave_fino_dic[time_info] = sort_dic
 
         self.global_wave_dic = wave_fino_dic
 
-
+    def convert_time(self, time_info_str):
+        """转换时间格式"""
+        locale.setlocale(locale.LC_ALL, 'zh_CN.UTF-8')
+        dt = datetime.strptime(time_info_str, '%Y%m%d_%H%M%S_%f')
+        time_info = dt.strftime('%Y年%m月%d日 %H:%M:%S.%f')[:-3]
+        return time_info

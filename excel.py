@@ -4,11 +4,11 @@ from PyQt5.QtGui import QStandardItem, QColor
 from PyQt5.QtCore import Qt
 
 def convert_excel_to_html(input_file, output_file):
-    """将Excel文件转换为HTML文件
+    """将Excel文件的除了"试验数据记录表"以外的sheet页转换为HTML文件
 
     Args:
         input_file (str): 目标Excel文件路径
-        output_file (str): 生成html文件路径
+        output_file (str): 生成HTML文件路径
     """
     # 判断输出文件是否已存在，若存在则删除
     if os.path.exists(output_file):
@@ -24,7 +24,14 @@ def convert_excel_to_html(input_file, output_file):
         # 打开Excel文件
         workbook = excel.Workbooks.Open(input_file)
 
-        # 将工作簿保存为HTML格式
+        # 遍历所有sheet页
+        for i in reversed(range(1, workbook.Sheets.Count + 1)):
+            sheet = workbook.Sheets(i)
+            if sheet.Name == "试验数据记录表":
+                # 如果sheet页名称为"试验数据记录表"，则移除该sheet页
+                workbook.Sheets(i).Delete()
+
+        # 将剩余的sheet页保存为HTML格式
         output_file = os.path.abspath(output_file)
         workbook.SaveAs(output_file, FileFormat=44)
 
@@ -37,6 +44,7 @@ def convert_excel_to_html(input_file, output_file):
     finally:
         # 关闭Excel应用程序
         excel.Quit()
+
 
 def split_txt_line(txt_line, event_levels_colors):
     """拆分txt文件中的一行数据
@@ -71,7 +79,7 @@ def split_txt_line(txt_line, event_levels_colors):
     item_events = QStandardItem(events)
 
     # 根据事件等级设置对应的颜色
-    color = event_levels_colors.get(level, QColor())
+    color = QColor(event_levels_colors.get(level))
     item_time.setBackground(color)
     item_host.setBackground(color)
     item_alarm.setBackground(color)

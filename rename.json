@@ -1,0 +1,8 @@
+[
+    {
+        "original_name": "file1.txt",
+        "new_name": "new_file1.txt",
+        "file_path": "/path/to/file1.txt",
+        "root_path": "/path/to"
+    }
+]

@@ -1,4 +1,5 @@
 import os
+import json
 import re
 import sys
 import threading
@@ -8,11 +9,12 @@ from excel import convert_excel_to_html, split_txt_line
 from natsort import natsorted
 from PyQt5 import QtCore
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QStandardItem, QStandardItemModel, QPixmap
-from PyQt5.QtWidgets import QApplication, QMainWindow, QAction, QTableView, QFileDialog, QSplitter, QTreeView, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QFrame, QLabel, QComboBox,QPushButton, QScrollArea,QMainWindow
+from PyQt5.QtGui import QStandardItem, QStandardItemModel, QPixmap, QIcon, QColor
+from PyQt5.QtWidgets import QApplication, QMainWindow, QAction, QTableView, QFileDialog, QSplitter, QTreeView, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QFrame, QLabel, QComboBox,QPushButton, QScrollArea,QMainWindow, QAbstractItemView,QHeaderView, QMenu
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from ComtradeWidget import ComtradeWidget
 from SettingsDialog import SettingsDialog
+from RenameDialog import RenameDialog
 
 
 
@@ -20,11 +22,11 @@ class MainWindow(QMainWindow):
 
     # 定义事件等级枚举值和对应的颜色
     event_levels_colors = {
-        '正常': Qt.gray,
-        '轻微': Qt.green,
-        '报警': Qt.yellow,
-        '严重告警': Qt.darkYellow,
-        '紧急': Qt.red
+        '正常': "#e4e4e4",
+        '轻微': "#48D1CC",
+        '报警': "#FFFF00",
+        '严重告警': "#FF8C00",
+        '紧急': "#FF0000"
     }
 
     global_png_dict = {}    # 当前所有图片路径字典
@@ -39,7 +41,6 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("测试")
         self.initMenuBar()
         self.initMainWindows()
-        # self.create_main_windows()
         self.showMaximized()
         self.root_folder_path = ""
         self.temp_folder_path = ""
@@ -53,9 +54,12 @@ class MainWindow(QMainWindow):
 
         # 创建文件菜单
         file_menu = menu_bar.addMenu("文件")
-        open_folder_action = QAction("打开文件夹", self)
+        open_folder_action = QAction("加载工程目录", self)
         open_folder_action.triggered.connect(self.openFolder)
         file_menu.addAction(open_folder_action)
+        load_last_action = QAction("加载上次目录", self)
+        load_last_action.triggered.connect(self.load_last_dirs)
+        file_menu.addAction(load_last_action)
         setting_action = QAction("设置", self)
         setting_action.triggered.connect(self.openSetting)
         file_menu.addAction(setting_action)
@@ -79,7 +83,12 @@ class MainWindow(QMainWindow):
         self.tree_layout.addWidget(self.search_input)
         self.tree_layout.addWidget(self.tree_view)
         self.tree_view.clicked.connect(self.treeItemClicked) # 点击事件
-        self.search_input.textChanged.connect(self.filterTreeView)
+        self.tree_view.setContextMenuPolicy(Qt.CustomContextMenu) # 设置右键菜单
+        self.tree_view.customContextMenuRequested.connect(self.show_context_menu) # 右键点击事件
+        self.search_input.textChanged.connect(self.filter_TreeView) # 输入框内容改变事件
+        search_icon = QIcon("search.png")
+        self.search_input.addAction(search_icon, QLineEdit.LeadingPosition)
+
 
         # 创建右侧的TabWidget控件
         self.tab_widget = QTabWidget(self)
@@ -103,28 +112,48 @@ class MainWindow(QMainWindow):
         self.screenshot_layout.addLayout(self.screenshot_control_layout)
 
         # 添加下拉框
+        left_control_layout = QHBoxLayout()
+        left_control_layout.setSpacing(15)
         step_switch_label = QLabel("步骤切换")
+        step_switch_label.setMaximumWidth(300)
         interface_switch_label = QLabel("界面切换")
+        interface_switch_label.setMaximumWidth(300)
         self.step_switch_dropdown = QComboBox()
+        self.step_switch_dropdown.setMaximumWidth(300)
         self.interface_switch_dropdown = QComboBox()
-        self.screenshot_control_layout.addWidget(step_switch_label)
-        self.screenshot_control_layout.addWidget(self.step_switch_dropdown)
-        self.screenshot_control_layout.addWidget(interface_switch_label)
-        self.screenshot_control_layout.addWidget(self.interface_switch_dropdown)
+        self.interface_switch_dropdown.setMaximumWidth(300)
+
         self.step_switch_dropdown.currentIndexChanged.connect(self.on_cbstep_changed)
         self.interface_switch_dropdown.currentIndexChanged.connect(self.on_cbinterface_changed)
 
+        left_control_layout.addWidget(step_switch_label)
+        left_control_layout.addWidget(self.step_switch_dropdown)
+        left_control_layout.addWidget(interface_switch_label)
+        left_control_layout.addWidget(self.interface_switch_dropdown)
+        left_control_layout.addStretch()
+
+
         # 添加上下页按钮及显示页码的控件
+        right_control_layout = QHBoxLayout()
+        right_control_layout.setSpacing(15)
         self.prev_button = QPushButton("上一页")
+        self.prev_button.setMaximumWidth(300)
         self.next_button = QPushButton("下一页")
+        self.next_button.setMaximumWidth(300)
         self.page_label = QLabel()
-        self.screenshot_control_layout.addWidget(self.prev_button)
-        self.screenshot_control_layout.addWidget(self.page_label)
-        self.screenshot_control_layout.addWidget(self.next_button)
+        self.page_label.setMaximumWidth(300)
 
         self.tab_widget.addTab(self.screenshot_widget, "截屏")
         self.prev_button.clicked.connect(self.previous_image)
         self.next_button.clicked.connect(self.next_image)
+
+        right_control_layout.addStretch() # 添加弹簧
+        right_control_layout.addWidget(self.prev_button)
+        right_control_layout.addWidget(self.page_label)
+        right_control_layout.addWidget(self.next_button)
+
+        self.screenshot_control_layout.addLayout(left_control_layout)
+        self.screenshot_control_layout.addLayout(right_control_layout)
 
         self.comtrade_widget = ComtradeWidget("f")
         self.tab_widget.addTab(self.comtrade_widget, "录波")
@@ -135,8 +164,13 @@ class MainWindow(QMainWindow):
         # 创建QTableView并设置数据模型
         self.message_table = QTableView()
         self.message_table.setModel(self.message_model)
+        self.message_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.message_table.horizontalHeader().setStretchLastSection(True)
+        self.message_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.message_table.verticalHeader().setVisible(False)
         self.tab_widget.addTab(self.message_table, "报文")
+        # 设置Tab页上的字体样式
+        self.tab_widget.setStyleSheet("QTabBar::tab { font-size: 16px; width: 100px; height: 30px; }")
 
         # 创建 QScrollArea 控件并将 tab_widget 放入其中
         scroll_area = QScrollArea()
@@ -154,102 +188,6 @@ class MainWindow(QMainWindow):
         splitter.setSizes([self.width() * 0.20, self.width() * 0.80])
 
         self.setCentralWidget(splitter)
-
-    def create_main_windows(self):
-        # 创建输入框
-        line_edit = QLineEdit()
-
-        # 创建 QTreeView 控件
-        tree_view = QTreeView()
-        tree_view.clicked.connect(self.treeItemClicked) # 点击事件
-
-        # 创建 QTabWidget 控件
-        tab_widget = QTabWidget()
-
-        # 创建四个 Tab 页
-        # 创建”概述“页控件
-        webview = QWebEngineView()
-
-
-        # 创建“截屏”页控件
-        screenshot_widget = QWidget()
-        screenshot_widget.autoFillBackground()
-        screenshot_layout = QVBoxLayout(screenshot_widget)
-        screenshot_layout.setAlignment(Qt.AlignCenter)
-
-        # 添加显示图片的控件
-        image_label = QLabel()
-        image_label.autoFillBackground()
-        screenshot_layout.addWidget(image_label)
-
-        # 添加下拉框，上下也按钮和显示页码的控件 的水平布局
-        screenshot_control_layout = QHBoxLayout()
-        screenshot_layout.addLayout(screenshot_control_layout)
-
-
-         # 添加下拉框
-        step_switch_label = QLabel("步骤切换")
-        interface_switch_label = QLabel("界面切换")
-        step_switch_dropdown = QComboBox()
-        interface_switch_dropdown = QComboBox()
-        screenshot_control_layout.addWidget(step_switch_label)
-        screenshot_control_layout.addWidget(step_switch_dropdown)
-        screenshot_control_layout.addWidget(interface_switch_label)
-        screenshot_control_layout.addWidget(interface_switch_dropdown)
-        screenshot_control_layout.setSpacing(0)
-        step_switch_dropdown.currentIndexChanged.connect(self.on_cbstep_changed)
-        interface_switch_dropdown.currentIndexChanged.connect(self.on_cbinterface_changed)
-
-        # 添加上下页按钮及显示页码的控件
-        prev_button = QPushButton("上一页")
-        next_button = QPushButton("下一页")
-        page_label = QLabel()
-        screenshot_control_layout.addWidget(prev_button)
-        screenshot_control_layout.addWidget(page_label)
-        screenshot_control_layout.addWidget(next_button)
-        prev_button.clicked.connect(self.previous_image)
-        next_button.clicked.connect(self.next_image)
-
-        # 创建“录波”tab页
-        comtrade_widget = ComtradeWidget("")
-
-        # 创建“报文”页控件
-        message_model = QStandardItemModel()
-        message_model.setHorizontalHeaderLabels(['时间', '主机', '系统告警', '事件等级', '报警组', '事件列表'])
-        # 创建QTableView并设置数据模型
-        message_table = QTableView()
-        message_table.setModel(message_model)
-        message_table.verticalHeader().setVisible(False)
-
-        tab_widget.addTab(webview, "概述")
-        tab_widget.addTab(screenshot_widget, "截屏")
-        tab_widget.addTab(comtrade_widget, "录波")
-        tab_widget.addTab(message_table, "报文")
-
-        # 创建垂直布局
-        frame = QFrame()
-        frame.setFrameShape(QFrame.StyledPanel)
-        tree_layout = QVBoxLayout(frame)
-        tree_layout.addWidget(line_edit)
-        tree_layout.addWidget(tree_view)
-
-        # 创建 QSplitter 控件
-        splitter = QSplitter(self)
-        splitter.addWidget(frame)
-        splitter.addWidget(tab_widget)
-        splitter.setOrientation(Qt.Horizontal)
-
-        # 设置 QSplitter 控件的大小比例为 25% 和 75%
-        splitter.setSizes([self.width() * 0.20, self.width() * 0.80])
-
-        # 创建主窗口的布局
-        main_layout = QVBoxLayout()
-        main_layout.addWidget(splitter)
-
-        # 创建主窗口的中心部件，并设置布局
-        central_widget = QWidget()
-        central_widget.setLayout(main_layout)
-        self.setCentralWidget(central_widget)
 
     def openSetting(self):
         dialog = SettingsDialog()
@@ -275,21 +213,39 @@ class MainWindow(QMainWindow):
         model = QStandardItemModel()
 
         # 加载根目录
+        # thread1 = threading.Thread(target=self.save_root_path, args=(folder_path))
+        # thread1.start()
+        # thread1.join()
+        self.save_root_path(folder_path)
+
         root_item = QStandardItem(os.path.basename(folder_path))
         root_item.setData(folder_path, Qt.UserRole)  # 设置根节点的路径属性
         root_item.setEditable(False)  # 设置根节点不可编辑
         model.appendRow(root_item)
-
         dir_projects = self.loadProjects(folder_path)
-        thread = threading.Thread(target=self.loadSubDirectories, args=(root_item, dir_projects))
+        thread2 = threading.Thread(target=self.loadSubDirectories, args=(root_item, dir_projects))
 
-        # self.loadSubDirectories(root_item, dir_projects)
-        thread.start()
-        thread.join()
+        thread2.start()
+        thread2.join()
 
         self.tree_view.setModel(model)
+        self.tree_view.setEditTriggers(QTreeView.NoEditTriggers)
         self.tree_view.header().setVisible(False)
         self.tree_view.expandAll()
+
+    def save_root_path(self, root_path):
+        if not root_path:
+            return
+
+        # 更新配置文件中的路径信息
+        with open('config.json', 'r+') as f:
+            config = json.load(f)
+            config['root_path'] = root_path
+            f.seek(0)
+            json.dump(config, f, indent=4)
+            f.truncate()
+
+
 
     def loadSubDirectories(self, parent_item, projects_info):
         """
@@ -304,60 +260,62 @@ class MainWindow(QMainWindow):
                item = QStandardItem(first_key)
                item.setData(first_key, Qt.UserRole)
                parent_item.appendRow(item)
-
-               sort_keys = natsorted(projects_info[first_key].keys())
+               new_name_dic = self.change_dirc_keys(projects_info[first_key])
+               sort_keys = natsorted(new_name_dic.keys())
 
 
                for second_key in sort_keys:
                    # 加载第二层级目录，工程小项及路径属性
-                   project_path = projects_info[first_key][second_key]
+                   project_path = new_name_dic[second_key]
                    sub_Item = QStandardItem(second_key)
                    sub_Item.setData(project_path, Qt.UserRole)
                    item.appendRow(sub_Item)
 
-    def filterTreeView(self, keyword):
-        """
-        模糊匹配目录树
-        """
+    def filter_TreeView(self, keyword):
         if keyword:
+            # 获取根目录下的第一层节点。即工程大项节点。
             root_item = self.tree_view.model().item(0)
-            if root_item:
-                for i in range(root_item.rowCount()):
-                    item = root_item.child(i)
-                    self.filterItem(item, keyword)
+            for row in range(root_item.rowCount()):
+                #遍历工程大项节点下的所有子节点，并隐藏不包含关键词的节点。
+                level1_item = root_item.child(row)
+                child_count = level1_item.rowCount()
+                for child_row in range(level1_item.rowCount()):
+                    level2_item = level1_item.child(child_row)
+                    if keyword in level2_item.text():
+                        self.show_item_with_keyword(level2_item, keyword)
+                    else:
+                        self.hide_item_without_keyword(level2_item)
+                        child_count -= 1
+
+                if child_count == 0 and keyword not in level1_item.text():
+                    self.hide_item_without_keyword(level1_item)
         else:
-            self.loadTreeView(self.root_folder_path)  # 加载最初的目录树
+            self.loadTreeView(self.root_folder_path)
 
-    def filterItem(self, item, keyword):
-        """
-        递归过滤目录树节点
-        """
-        if self.matchItem(item, keyword):
-            index = item.index()
-            self.tree_view.setRowHidden(index.row(), index.parent(), False)  # 设置节点可见
-            self.tree_view.expand(index.parent())
-            return True
+    def show_item_with_keyword(self, item, keyword):
+        index = item.index()
+        self.tree_view.setRowHidden(index.row(), index.parent(), False)
+        for row in range(item.rowCount()):
+            child_item = item.child(row)
+            if keyword not in child_item.text():
+                self.hide_item_without_keyword(child_item)
+            else:
+                child_index = child_item.index()
+                self.tree_view.setRowHidden(child_index.row(), child_index.parent(), False)
 
-        for i in range(item.rowCount()):
-            child_item = item.child(i)
-            if self.filterItem(child_item, keyword):
-                index = child_item.index()
-                self.tree_view.setRowHidden(index.row(), index.parent(), False)  # 设置节点可见
-                self.tree_view.expand(index.parent())
+    def hide_item_without_keyword(self, item):
+        index = item.index()
+        self.tree_view.setRowHidden(index.row(), index.parent(), True)
+        for row in range(item.rowCount()):
+            child_item = item.child(row)
+            self.hide_item_without_keyword(child_item)
+
+    def keyword_in_children(self, parent_item, keyword):
+        for i in range(parent_item.rowCount()):
+            child_item = parent_item.child(i)
+            text = child_item.text()
+            if keyword in text:
                 return True
-
-            index = item.index()
-            self.tree_view.setRowHidden(index.row(), index.parent(), True)  # 设置节点隐藏
-            return False
-
-    def matchItem(self, item, keyword):
-        """
-        判断节点是否与关键词匹配
-        """
-        item_text = item.text()
-        if re.search(keyword, item_text, re.IGNORECASE):
-            return True
-
         return False
 
     def loadProjects(self, folder_path):
@@ -408,7 +366,85 @@ class MainWindow(QMainWindow):
                         secrond_result[secrond_dir] = dir_path.replace("\\", "/")
                         result[first_dir] = secrond_result
 
+
+        self.make_last_json(result)
         return result
+
+    def load_last_dirs(self):
+        """
+        加载上次打开的目录
+        """
+        folder_path = self.load_root_path()
+        if not folder_path:
+            return
+
+        if os.path.exists('lastdirs.json'):
+            with open('lastdirs.json', 'r') as f:
+                data = json.load(f)
+
+            if data:
+                # 加载根目录
+                model = QStandardItemModel()
+                root_item = QStandardItem(os.path.basename(folder_path))
+                root_item.setData(folder_path, Qt.UserRole)  # 设置根节点的路径属性
+                root_item.setEditable(False)  # 设置根节点不可编辑
+                model.appendRow(root_item)
+
+                thread = threading.Thread(target=self.loadSubDirectories, args=(root_item, data))
+                thread.start()
+                thread.join()
+
+                self.tree_view.setModel(model)
+                self.tree_view.setEditTriggers(QTreeView.NoEditTriggers)
+                self.tree_view.header().setVisible(False)
+                self.tree_view.expandAll()
+
+    def load_root_path(self):
+        # 读取配置文件中的路径信息
+        with open('config.json', 'r') as f:
+            config = json.load(f)
+            wave_app = config.get('root_path')
+
+        # 如果配置文件中存在路径信息，则显示在输入框中
+        if wave_app:
+            return wave_app
+        else:
+            return None
+
+    def change_dir_name(self, path, dir_name):
+        """
+        读取重命名记录json，修改目录显示名称
+        """
+        result_name =""
+        with open('rename.json', 'r') as f:
+            data = json.load(f)
+
+        for entry in data:
+            if entry["original_name"] == dir_name and entry["file_path"] == path:
+                result_name = entry["new_name"]
+
+        return result_name if result_name else dir_name
+
+    def change_dirc_keys(self, projetc_dic):
+        if not projetc_dic:
+            return None
+        new_name_dic = {}
+        for key in projetc_dic.keys():
+            new_key = self.change_dir_name(projetc_dic[key], key)
+            if key != new_key:
+                new_name_dic[new_key] = projetc_dic[key]
+            else:
+                new_name_dic[key] = projetc_dic[key]
+
+        return new_name_dic
+
+    def make_last_json(self,  project_dir_dic):
+        if os.path.exists('lastdirs.json'):
+            os.remove('lastdirs.json')
+
+         # 创建新的 JSON 文件
+        with open("lastdirs.json", "w") as f:
+            json.dump(project_dir_dic, f, indent=4)
 
     def compareDirs(self, path1, path2):
         """
@@ -466,6 +502,27 @@ class MainWindow(QMainWindow):
             thread_screenshots.join()
 
             self.load_overview_data(file_path)
+
+    def show_context_menu(self, pos):
+        index = self.tree_view.indexAt(pos)
+        item = self.tree_view.model().itemFromIndex(index)
+        if index.isValid() and item.parent() and not item.hasChildren():
+            menu = QMenu(self.tree_view)
+            rename_action = menu.addAction("修改项目名称")
+            rename_action.triggered.connect(self.rename_item)
+            menu.exec_(self.tree_view.viewport().mapToGlobal(pos))
+
+    def rename_item(self):
+        selected_indexes = self.tree_view.selectedIndexes()
+        if selected_indexes:
+            index = selected_indexes[0]
+            item = self.tree_view.model().itemFromIndex(index)
+            currentname = item.text()
+            path = index.data(Qt.UserRole)
+            root_index = self.tree_view.model().index(0, 0)  # 获取根节点的索引
+            root_path = self.tree_view.model().data(root_index, QtCore.Qt.UserRole)
+            dialog = RenameDialog(currentname, path, root_path)
+            dialog.exec_()
 
     def load_overview_data(self, project_path):
         """加载概述数据
@@ -647,7 +704,7 @@ class MainWindow(QMainWindow):
         # 拼接filename
         rowCount = self.message_model.rowCount()
         if rowCount > 0:
-            self.message_model.removeRows(1,rowCount-1)
+            self.message_model.removeRows(0,rowCount)
 
         project_name = os.path.basename(path)
         file_name = project_name + ".txt"
@@ -659,7 +716,7 @@ class MainWindow(QMainWindow):
         with open(txt_path, 'r', encoding='gb2312') as file:
             lines = file.readlines()
             lines = [line.strip() for line in lines]
-
+            lines.pop(0)
             # 按时间先后排序
             lines.sort(key=lambda x: x.split()[0])
             for line in lines:
