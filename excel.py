@@ -45,7 +45,6 @@ def convert_excel_to_html(input_file, output_file):
         # 关闭Excel应用程序
         excel.Quit()
 
-
 def split_txt_line(txt_line, event_levels_colors):
     """拆分txt文件中的一行数据
 

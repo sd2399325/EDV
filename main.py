@@ -3,47 +3,49 @@ import json
 import re
 import sys
 import threading
-
+import shutil
 
 from excel import convert_excel_to_html, split_txt_line
 from natsort import natsorted
 from PyQt5 import QtCore
-from PyQt5.QtCore import Qt
+from PyQt5.QtNetwork import QNetworkProxy
+from PyQt5.QtCore import Qt, QUrl
 from PyQt5.QtGui import QStandardItem, QStandardItemModel, QPixmap, QIcon, QColor
-from PyQt5.QtWidgets import QApplication, QMainWindow, QAction, QTableView, QFileDialog, QSplitter, QTreeView, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QFrame, QLabel, QComboBox,QPushButton, QScrollArea,QMainWindow, QAbstractItemView,QHeaderView, QMenu
+from PyQt5.QtWidgets import QApplication, QMainWindow, QAction, QTableView, QFileDialog, QSplitter, QTreeView, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QFrame, QLabel, QComboBox,QPushButton, QScrollArea,QMainWindow, QAbstractItemView,QHeaderView, QMenu, QMessageBox
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from ComtradeWidget import ComtradeWidget
 from SettingsDialog import SettingsDialog
 from RenameDialog import RenameDialog
 
 
-
 class MainWindow(QMainWindow):
-
     # 定义事件等级枚举值和对应的颜色
     event_levels_colors = {
         '正常': "#e4e4e4",
-        '轻微': "#48D1CC",
+        '轻微': "#51c47b",
         '报警': "#FFFF00",
         '严重告警': "#FF8C00",
-        '紧急': "#FF0000"
+        '紧急': "#E24B47"
     }
 
     global_png_dict = {}    # 当前所有图片路径字典
     global_now_png = ""     # 当前图片路径
     current_png_list = []    # 当前图片路径集合
     current_png_index = 0 # 记录当前图片路径在当前图片路径集合中的位置
+    global_dir_projects = {} # 记录当前目录下的所有工程信息
 
     def __init__(self):
         super().__init__()
 
 
-        self.setWindowTitle("测试")
+        self.setWindowTitle("试验数据可视化")
         self.initMenuBar()
         self.initMainWindows()
         self.showMaximized()
         self.root_folder_path = ""
         self.temp_folder_path = ""
+        self.dir_projects = {}
+        self.projects_keys_new = {}
 
     def initMenuBar(self):
         """
@@ -89,14 +91,32 @@ class MainWindow(QMainWindow):
         search_icon = QIcon("search.png")
         self.search_input.addAction(search_icon, QLineEdit.LeadingPosition)
 
-
         # 创建右侧的TabWidget控件
         self.tab_widget = QTabWidget(self)
+        self.init_tab_widget()
 
+        # 创建 QScrollArea 控件并将 tab_widget 放入其中
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setWidget(self.tab_widget)
+
+        splitter = QSplitter(self)
+        splitter.addWidget(self.tree_frame)
+        splitter.addWidget(scroll_area)
+
+        # 设置QSplitter的布局方式为水平布局
+        splitter.setOrientation(Qt.Horizontal)
+
+        # 设置TreeView的宽度为TabWidget宽度的1/5
+        splitter.setSizes([int(self.width() * 0.20), int(self.width() * 0.80)])
+
+        self.setCentralWidget(splitter)
+
+    def init_tab_widget(self):
+        """初始化Tab控件"""
         # 创建”概述“页控件
         self.webview = QWebEngineView()
         self.tab_widget.addTab(self.webview, "概述")
-
 
         # 创建“截屏”页控件
         self.screenshot_widget = QWidget()
@@ -126,12 +146,11 @@ class MainWindow(QMainWindow):
         self.step_switch_dropdown.currentIndexChanged.connect(self.on_cbstep_changed)
         self.interface_switch_dropdown.currentIndexChanged.connect(self.on_cbinterface_changed)
 
+        left_control_layout.addStretch()
         left_control_layout.addWidget(step_switch_label)
         left_control_layout.addWidget(self.step_switch_dropdown)
         left_control_layout.addWidget(interface_switch_label)
         left_control_layout.addWidget(self.interface_switch_dropdown)
-        left_control_layout.addStretch()
-
 
         # 添加上下页按钮及显示页码的控件
         right_control_layout = QHBoxLayout()
@@ -147,10 +166,10 @@ class MainWindow(QMainWindow):
         self.prev_button.clicked.connect(self.previous_image)
         self.next_button.clicked.connect(self.next_image)
 
-        right_control_layout.addStretch() # 添加弹簧
         right_control_layout.addWidget(self.prev_button)
         right_control_layout.addWidget(self.page_label)
         right_control_layout.addWidget(self.next_button)
+        right_control_layout.addStretch() # 添加弹簧
 
         self.screenshot_control_layout.addLayout(left_control_layout)
         self.screenshot_control_layout.addLayout(right_control_layout)
@@ -172,24 +191,8 @@ class MainWindow(QMainWindow):
         # 设置Tab页上的字体样式
         self.tab_widget.setStyleSheet("QTabBar::tab { font-size: 16px; width: 100px; height: 30px; }")
 
-        # 创建 QScrollArea 控件并将 tab_widget 放入其中
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setWidget(self.tab_widget)
-
-        splitter = QSplitter(self)
-        splitter.addWidget(self.tree_frame)
-        splitter.addWidget(scroll_area)
-
-        # 设置QSplitter的布局方式为水平布局
-        splitter.setOrientation(Qt.Horizontal)
-
-        # 设置TreeView的宽度为TabWidget宽度的1/5
-        splitter.setSizes([self.width() * 0.20, self.width() * 0.80])
-
-        self.setCentralWidget(splitter)
-
     def openSetting(self):
+        """打开设定"""
         dialog = SettingsDialog()
         dialog.exec_()
 
@@ -210,20 +213,18 @@ class MainWindow(QMainWindow):
                 os.mkdir(os.path.join(self.temp_folder_path))
 
     def loadTreeView(self, folder_path):
+        """加载TreeView"""
         model = QStandardItemModel()
 
         # 加载根目录
-        # thread1 = threading.Thread(target=self.save_root_path, args=(folder_path))
-        # thread1.start()
-        # thread1.join()
         self.save_root_path(folder_path)
 
         root_item = QStandardItem(os.path.basename(folder_path))
         root_item.setData(folder_path, Qt.UserRole)  # 设置根节点的路径属性
         root_item.setEditable(False)  # 设置根节点不可编辑
         model.appendRow(root_item)
-        dir_projects = self.loadProjects(folder_path)
-        thread2 = threading.Thread(target=self.loadSubDirectories, args=(root_item, dir_projects))
+        global_dir_projects = self.loadProjects(folder_path)
+        thread2 = threading.Thread(target=self.loadSubDirectories, args=(root_item, global_dir_projects))
 
         thread2.start()
         thread2.join()
@@ -234,6 +235,7 @@ class MainWindow(QMainWindow):
         self.tree_view.expandAll()
 
     def save_root_path(self, root_path):
+        """"保存根目录路径"""
         if not root_path:
             return
 
@@ -245,8 +247,6 @@ class MainWindow(QMainWindow):
             json.dump(config, f, indent=4)
             f.truncate()
 
-
-
     def loadSubDirectories(self, parent_item, projects_info):
         """
         递归加载子目录
@@ -254,15 +254,17 @@ class MainWindow(QMainWindow):
         if not projects_info:
             return None
         else:
-           first_keys = natsorted(projects_info.keys())
+           new_projects_keys = self.change_project_key(projects_info.keys(), self.root_folder_path)
+           first_keys = natsorted(new_projects_keys.keys() if new_projects_keys else projects_info.keys())
+
            for first_key in first_keys:
                # 加载第一层级目录，工程大项
                item = QStandardItem(first_key)
-               item.setData(first_key, Qt.UserRole)
+               real_key = new_projects_keys[first_key] if new_projects_keys else first_key
+               item.setData(real_key, Qt.UserRole)
                parent_item.appendRow(item)
-               new_name_dic = self.change_dirc_keys(projects_info[first_key])
+               new_name_dic = self.change_dirc_keys(projects_info[real_key])
                sort_keys = natsorted(new_name_dic.keys())
-
 
                for second_key in sort_keys:
                    # 加载第二层级目录，工程小项及路径属性
@@ -272,6 +274,7 @@ class MainWindow(QMainWindow):
                    item.appendRow(sub_Item)
 
     def filter_TreeView(self, keyword):
+        """根据关键词过滤TreeView"""
         if keyword:
             # 获取根目录下的第一层节点。即工程大项节点。
             root_item = self.tree_view.model().item(0)
@@ -290,9 +293,10 @@ class MainWindow(QMainWindow):
                 if child_count == 0 and keyword not in level1_item.text():
                     self.hide_item_without_keyword(level1_item)
         else:
-            self.loadTreeView(self.root_folder_path)
+            self.load_last_dirs()
 
     def show_item_with_keyword(self, item, keyword):
+        """根据关键词显示TreeView中的节点"""
         index = item.index()
         self.tree_view.setRowHidden(index.row(), index.parent(), False)
         for row in range(item.rowCount()):
@@ -304,6 +308,7 @@ class MainWindow(QMainWindow):
                 self.tree_view.setRowHidden(child_index.row(), child_index.parent(), False)
 
     def hide_item_without_keyword(self, item):
+        """隐藏节点"""
         index = item.index()
         self.tree_view.setRowHidden(index.row(), index.parent(), True)
         for row in range(item.rowCount()):
@@ -311,6 +316,7 @@ class MainWindow(QMainWindow):
             self.hide_item_without_keyword(child_item)
 
     def keyword_in_children(self, parent_item, keyword):
+        """判断关键词是否在子节点中"""
         for i in range(parent_item.rowCount()):
             child_item = parent_item.child(i)
             text = child_item.text()
@@ -366,7 +372,6 @@ class MainWindow(QMainWindow):
                         secrond_result[secrond_dir] = dir_path.replace("\\", "/")
                         result[first_dir] = secrond_result
 
-
         self.make_last_json(result)
         return result
 
@@ -377,6 +382,7 @@ class MainWindow(QMainWindow):
         folder_path = self.load_root_path()
         if not folder_path:
             return
+        self.root_folder_path = folder_path  # 保存文件夹路径
 
         if os.path.exists('lastdirs.json'):
             with open('lastdirs.json', 'r') as f:
@@ -400,6 +406,7 @@ class MainWindow(QMainWindow):
                 self.tree_view.expandAll()
 
     def load_root_path(self):
+        """加载工程路径"""
         # 读取配置文件中的路径信息
         with open('config.json', 'r') as f:
             config = json.load(f)
@@ -426,6 +433,7 @@ class MainWindow(QMainWindow):
         return result_name if result_name else dir_name
 
     def change_dirc_keys(self, projetc_dic):
+        """"修改小项显示名称"""
         if not projetc_dic:
             return None
         new_name_dic = {}
@@ -438,7 +446,33 @@ class MainWindow(QMainWindow):
 
         return new_name_dic
 
+    def change_project_key(self, project_keys, root_path):
+        """修改大项显示名称"""
+        # 逻辑需要修改，传入为大项keys，返回贼是key-value的字典。这样匹配新名字。
+        if not project_keys:
+            return None
+
+        projects_keys_new = {}
+
+        with open('renameProject.json', 'r') as f:
+            data= json.load(f)
+        keys = []
+        for key in project_keys:
+            keys.append(key)
+
+        # 遍历所有的大项keys，与记录的数据进行匹配
+        for entry in data[1:]:
+            if entry["original_project_name"] in keys and entry["root_path"] == root_path:
+                projects_keys_new[entry["new_project_name"]] = entry["original_project_name"]
+                keys.remove(entry["original_project_name"])
+
+        for key in keys:
+            projects_keys_new[key] = key
+
+        return projects_keys_new
+
     def make_last_json(self,  project_dir_dic):
+        """生成最后一次加载目录记录"""
         if os.path.exists('lastdirs.json'):
             os.remove('lastdirs.json')
 
@@ -466,7 +500,6 @@ class MainWindow(QMainWindow):
             year_month2 = match2.group(1)
             number2 = match2.group(2)
 
-
         # 比较日期和试验编号，如果日期不同，返回日期最新的目录，如果日期相同，返回试验编号最大的目录
         if year_month1 != year_month2:
             return path1 if year_month1 > year_month2 else path2
@@ -489,7 +522,7 @@ class MainWindow(QMainWindow):
             thread_step.join()
 
             wave_path = os.path.normpath(os.path.join(file_path, "wave"))
-            thread_wave = threading.Thread(target=self.comtrade_widget.load_time_tree, args=(wave_path,))
+            thread_wave = threading.Thread(target=self.comtrade_widget.load_device_tree, args=(wave_path,))
             thread_wave.start()
             thread_wave.join()
 
@@ -504,15 +537,19 @@ class MainWindow(QMainWindow):
             self.load_overview_data(file_path)
 
     def show_context_menu(self, pos):
+        """显示右键菜单"""
         index = self.tree_view.indexAt(pos)
         item = self.tree_view.model().itemFromIndex(index)
-        if index.isValid() and item.parent() and not item.hasChildren():
+        if index.isValid() and item.parent():
             menu = QMenu(self.tree_view)
             rename_action = menu.addAction("修改项目名称")
             rename_action.triggered.connect(self.rename_item)
+            delete_action = menu.addAction("删除项目")
+            delete_action.triggered.connect(self.delete_item)
             menu.exec_(self.tree_view.viewport().mapToGlobal(pos))
 
     def rename_item(self):
+        """重命名节点"""
         selected_indexes = self.tree_view.selectedIndexes()
         if selected_indexes:
             index = selected_indexes[0]
@@ -521,8 +558,111 @@ class MainWindow(QMainWindow):
             path = index.data(Qt.UserRole)
             root_index = self.tree_view.model().index(0, 0)  # 获取根节点的索引
             root_path = self.tree_view.model().data(root_index, QtCore.Qt.UserRole)
-            dialog = RenameDialog(currentname, path, root_path)
+            level = True if not item.hasChildren() else False
+            dialog = RenameDialog(currentname, path, root_path, level)
             dialog.exec_()
+            self.load_last_dirs()
+
+    def delete_item(self):
+        """删除节点"""
+        selected_index = self.tree_view.selectedIndexes()[0]
+        item = self.tree_view.model().itemFromIndex(selected_index)
+        msg_box = QMessageBox()
+        msg_box.setIcon(QMessageBox.Warning)
+        msg_box.setWindowTitle("警告")
+
+        if selected_index.isValid() and item.parent() and not item.hasChildren():
+            # 删除子节点
+            msg_box.setText("确定要删除该试验项吗？该操作会删除该小组下所有实验数据，并且无法使用加载上一次目录功能！")
+            msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+            msg_box.setDefaultButton(QMessageBox.No)
+            button = msg_box.exec_()
+
+
+            if button == QMessageBox.Yes:
+                self.init_tab_widget()
+                # 删除子节点
+                if selected_index.flags() & Qt.ItemIsEditable:
+                    self.tab_widget.clear()
+                    self.init_tab_widget()
+
+                    # 清理加载上一次目录的记录
+                    if os.path.exists('lastdirs.json'):
+                        os.remove('lastdirs.json')
+
+                    # 比对是否进行过改名，如果层进改过名字，则获取真实名字
+                    with open('rename.json', 'r') as f:
+                        data = json.load(f)
+
+                    real_name = ""
+                    file_path = item.data(Qt.UserRole)
+                    current_name = item.text()
+                    for entry in data[1:]:
+                        if entry["new_name"] == current_name and entry["file_path"] == file_path:
+                            real_name = entry["original_name"]
+                            break
+                    # 移除改名记录
+                    if real_name:
+                        update_data = [obj for obj in data if obj.get("original_name") != real_name]
+
+                        with open("rename.json", "w") as f:
+                            json.dump(update_data, f,indent=4)
+
+                    # 移除目录
+                    if os.path.isdir(file_path):
+                        shutil.rmtree(file_path)
+
+                    # 重新加载目录
+                    self.loadTreeView(self.root_folder_path)
+        else:
+            # 删除父节点
+            msg_box.setText("确定要删除该试验大组吗？该操作会删除该大组下所有实验数据，并且无法使用加载上一次目录功能！")
+            msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+            msg_box.setDefaultButton(QMessageBox.No)
+            button = msg_box.exec_()
+            current_name = item.text()
+
+            if button == QMessageBox.Yes:
+                # 删除父节点及其子节点
+                # 需要初始化右侧的TabWidget控件，否则会出问题
+                self.tab_widget.clear()
+                self.init_tab_widget()
+
+                # 判断大项是否重命名，根据其原始名字，删除工程目录下所有包含该工程大项的实验数据
+                # 清理加载上一次目录的记录
+                if os.path.exists('lastdirs.json'):
+                    os.remove('lastdirs.json')
+
+                # 比对是否进行过改名，如果层进改过名字，则获取真实名字
+                with open('renameProject.json', 'r') as f:
+                    data= json.load(f)
+
+                real_project_name = ""
+
+                for entry in data[1:]:
+                    if entry["new_project_name"] == current_name :
+                        real_project_name = entry["original_project_name"]
+                        break
+
+                # 如果改过名字，则移除改名记录
+                if real_project_name:
+                    update_data = [obj for obj in data if obj.get("original_project_name") != real_project_name]
+
+                    with open("renameProject.json", "w") as f:
+                        json.dump(update_data, f,indent=4)
+
+                real_project_name = real_project_name if real_project_name else current_name
+
+                # 遍历工程目录下所有包含工程大项的信息实验数据并执行删除
+                for dirpath, dirnames, filenames in os.walk(self.root_folder_path, topdown=False):
+                    for dirname in dirnames[:]:
+                        if dirname.startswith(real_project_name):
+                            dir_full_path = os.path.join(dirpath, dirname)
+                            if os.path.isdir(dir_full_path):
+                                 shutil.rmtree(dir_full_path)
+
+                # 重新加载目录
+                self.loadTreeView(self.root_folder_path)
 
     def load_overview_data(self, project_path):
         """加载概述数据
@@ -547,10 +687,14 @@ class MainWindow(QMainWindow):
 
         # 加载temp.html文件
         html_file_path = os.path.abspath(excel_html_path)
+
+
+
         self.webview.load(QtCore.QUrl.fromLocalFile(html_file_path))
         self.webview.setZoomFactor(1.2)
 
     def join_excel_path(self, excel_path, project_name):
+        """拼接excel文件路径"""
         for root, dirs, files in os.walk(excel_path):
             for file in files:
                 if file.endswith('.xlsx') or file.endswith('.xls'):
@@ -735,6 +879,9 @@ class MainWindow(QMainWindow):
         # 获取窗口的大小
         window_size = self.size()
 
+    def clear_all_tabs(self):
+        """清空所有Tab页"""
+        self.tab_widget.clear()
 
 
 if __name__ == "__main__":

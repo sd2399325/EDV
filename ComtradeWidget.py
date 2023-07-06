@@ -30,47 +30,29 @@ class ComtradeWidget(QWidget):
         splitter = QSplitter(self)
 
 
-        # 创建三个QWidget 控件用来装在layout
-        time_widget = QWidget()
+        # 创建两个QWidget 控件用来装在layout
         device_widget = QWidget()
         waveform_widget = QWidget()
 
         # 创建三个垂直布局
-        time_layout = QVBoxLayout(time_widget)
         device_layout = QVBoxLayout(device_widget)
         waveform_layout = QVBoxLayout(waveform_widget)
 
         # 创建三个 QTreeView 控件和 QLabel 控件
-        self.time_tree = QTreeView()
         self.device_tree = QTreeView()
         self.waveform_tree = QTreeView()
 
-        time_label = QLabel("时间列表")
         device_label = QLabel("装置列表")
         waveform_label = QLabel("波形列表")
 
         # 设置标签的样式
-        label_style = "background-color: lightblue; font-size: 14px; font-weight: bold; border-radius: 5px;"
-        time_label.setStyleSheet(label_style)
+        label_style = "background-color: lightblue; font-size: 18px; font-weight: bold; border-radius: 8px;"
         device_label.setStyleSheet(label_style)
         waveform_label.setStyleSheet(label_style)
 
         # 设置标签文本居中对齐
-        time_label.setAlignment(Qt.AlignCenter)
         device_label.setAlignment(Qt.AlignCenter)
         waveform_label.setAlignment(Qt.AlignCenter)
-
-        # 设置时间列表的根节点为 "事件列表"
-        self.time_model = QStandardItemModel()
-        root_item = self.time_model.invisibleRootItem()
-        root_item.setEditable(False)
-        root_item.setText("事件列表")
-
-        # 设置 time_tree 的数据模型
-        self.time_tree.setModel(self.time_model)
-        self.time_tree.header().setVisible(False)
-        self.time_tree.expandAll()  # 展开所有节点
-        self.time_tree.setExpandsOnDoubleClick(False)  # 禁止双击收起节点
 
         # 自定义样式表，调整节点之间的间距和节点文字字体大小
         self.style_sheet = """
@@ -82,18 +64,15 @@ class ComtradeWidget(QWidget):
                 font-size: 16px;
             }
         """
-        self.time_tree.setStyleSheet(self.style_sheet)
+
 
         # 设置节点点击事件的处理函数
-        self.time_tree.clicked.connect(self.load_device_tree)
         self.device_tree.clicked.connect(self.load_waveform_tree)
 
         # 设置节点双击事件处理函数
         self.waveform_tree.doubleClicked.connect(self.open_wave_app)
 
         # 将控件添加到布局中
-        time_layout.addWidget(time_label)
-        time_layout.addWidget(self.time_tree)
         device_layout.addWidget(device_label)
         device_layout.addWidget(self.device_tree)
         waveform_layout.addWidget(waveform_label)
@@ -101,57 +80,30 @@ class ComtradeWidget(QWidget):
 
         self.device_tree.setStyleSheet(self.style_sheet)
         # 设置 time_tree 和 device_tree 的水平大小策略
-        self.time_tree.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.device_tree.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         # 将QWidget 控件添加到 QSplitter 控件中
-        splitter.addWidget(time_widget)
+        # splitter.addWidget(time_widget)
         splitter.addWidget(device_widget)
         splitter.addWidget(waveform_widget)
         splitter.setOrientation(Qt.Horizontal)
-        splitter.setSizes([self.width() * 0.25, self.width() * 0.25,self.width() * 0.50])
+        splitter.setSizes([int(self.width() * 0.38), int(self.width() * 0.62)])
         splitter.setLineWidth(0)
 
         # 将splitter 控件添加到主布局中
         main_layout.addWidget(splitter)
 
         # 加载时间列表的数据
-        self.load_time_tree(wave_path)
+        self.load_device_tree(wave_path)
 
-    def load_time_tree(self, wave_path):
-        if not wave_path:
-            return None
-
-        self.global_wave_path = wave_path
-        self.find_time(wave_path)
-
-        # 清空时间列表的数据
-        self.time_model.removeRows(0, self.time_model.rowCount())
-        self.device_tree.setModel(QStandardItemModel())
-        self.waveform_tree.setModel(QStandardItemModel())
-
-        # 查找时间key并填充控件
-        for time_info in self.global_time_set:
-                time_format = self.convert_time(time_info)
-                time_item = QStandardItem()
-                time_item.setTextAlignment(Qt.AlignCenter)
-                time_item.setText(time_format)
-                time_item.setData(time_info, Qt.UserRole)
-                time_item.setFlags(Qt.ItemIsEnabled)
-                self.time_model.appendRow(time_item)
-
-    def load_device_tree(self, index):
+    def load_device_tree(self, path):
+        """加载设备树"""
+        self.global_wave_path = path
         device_model = QStandardItemModel()
         device_root_item = device_model.invisibleRootItem()
         device_root_item.setEditable(False)
 
-        # 获取点击的节点
-        self.global_time_info = index.data(Qt.UserRole)
-
-        if self.global_time_info is None:
-            return
-
-        self.find_device(self.global_time_info)
+        self.find_device(path)
         wave_model = QStandardItemModel()
         self.waveform_tree.setModel(wave_model)
 
@@ -181,6 +133,7 @@ class ComtradeWidget(QWidget):
         self.device_tree.setStyleSheet(self.style_sheet)
 
     def load_waveform_tree(self, index):
+        """加载波形树"""
         # 获取点击的节点
         item = index.model().itemFromIndex(index)
         if item is None:
@@ -228,7 +181,7 @@ class ComtradeWidget(QWidget):
         self.waveform_tree.setExpandsOnDoubleClick(False)
         self.style_waveform = """
             QTreeView {
-                background-color: #e4e4e4;
+                background-color: #a1c7ae;
             }
             QTreeView::item {
                 padding: 8px;
@@ -238,6 +191,7 @@ class ComtradeWidget(QWidget):
         self.waveform_tree.setStyleSheet(self.style_waveform)
 
     def load_waveform_items(self, folder_path, parent_item):
+        """加载波形树节点"""
         for entry_name in os.listdir(folder_path):
             entry_path = os.path.join(folder_path, entry_name)
             entry_item = QStandardItem()
@@ -259,6 +213,7 @@ class ComtradeWidget(QWidget):
                 entry_item.appendRow(cfg_item)
 
     def open_wave_app(self, index):
+        """打开波形应用程序"""
         # 获取点击的节点
         item = index.model().itemFromIndex(index)
         if item is None:
@@ -298,12 +253,12 @@ class ComtradeWidget(QWidget):
 
         self.global_time_set = natsorted(time_info_set)
 
-    def find_device(self, time_info):
+    def find_device(self, path):
         """查找设备"""
         self.global_device_dic.clear()
-        for root, dirs, files in os.walk(self.global_wave_path):
+        for root, dirs, files in os.walk(path):
             for file in files:
-                if file.endswith(".CFG") and time_info in file:
+                if file.endswith(".CFG"):
                     parts = file.split('_')
                     device_info = ""
                     # 获取设备信息

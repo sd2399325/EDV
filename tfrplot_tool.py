@@ -45,8 +45,8 @@ def run_tfrplot_tool(cfg_file_path):
     # 使用快捷键 Ctrl+D 呼出加载 CFG 文件的窗体
     main_window.type_keys("^D")  # 模拟按下"Ctrl"键和"D"键
 
-    # 延迟一段时间以确保文件对话框加载完成
-    time.sleep(1)
+    # # 延迟一段时间以确保文件对话框加载完成
+    # time.sleep(1)
 
     # 定位文件对话框并设置文件路径
     file_dialog = app.window(title="Select COMTRADE configuration file")
@@ -54,8 +54,8 @@ def run_tfrplot_tool(cfg_file_path):
     file_path_edit = file_dialog.child_window(class_name="Edit")
     file_path_edit.set_text(cfg_file_path)
 
-    # 延迟一段时间以确保按钮可见并可以点击
-    time.sleep(1)
+    # # 延迟一段时间以确保按钮可见并可以点击
+    # time.sleep(1)
 
     # 点击"Open"按钮
     file_dialog.type_keys("%O")  # 模拟按下"Ctrl"键和"D"键
